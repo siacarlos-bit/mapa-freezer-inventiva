@@ -1,0 +1,4039 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapa Freezer - Produtos Acabados</title>
+<!-- Firebase SDK (compat) - usado para sincronizar o estoque em tempo real entre dispositivos -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+:root {
+--bg: #F4F8FA;
+--card-bg: #FFFFFF;
+--ink: #17262E;
+--muted: #64777F;
+--primary: #17546F;
+--primary-dark: #0E3A4D;
+--primary-light: #E3F0F4;
+--saida: #B24A34;
+--saida-light: #FBEAE6;
+--transfer: #29806B;
+--transfer-light: #E4F3EE;
+--entrada: #1D6FA5;
+--entrada-light: #E4EEF7;
+--border: #DCE6E9;
+--danger: #B23A3A;
+}
+* { box-sizing: border-box; }
+body {
+margin: 0;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+background: var(--bg);
+color: var(--ink);
+padding-bottom: 60px;
+}
+.topbar {
+background: var(--primary-dark);
+color: #fff;
+padding: 18px 16px 44px 16px;
+position: relative;
+}
+.topbar h1 {
+margin: 0 0 2px 0;
+font-size: 19px;
+letter-spacing: 0.2px;
+}
+.topbar .sub {
+font-size: 12px;
+color: #AFC7CE;
+}
+.sync-badge {
+display: inline-flex;
+align-items: center;
+gap: 5px;
+font-size: 11.5px;
+font-weight: 600;
+padding: 3px 9px;
+margin-top: 4px;
+border-radius: 999px;
+background: rgba(255,255,255,0.12);
+}
+.sync-badge.ok { color: #BFEBD6; }
+.sync-badge.stale { color: #F5D48A; }
+.conn-banner {
+display: none;
+background: #B23A3A; color: #fff; padding: 11px 14px;
+font-size: 13px; line-height: 1.4; text-align: center;
+}
+.conn-banner.show { display: block; }
+.load-error-screen {
+display: none; position: fixed; inset: 0; z-index: 200;
+background: rgba(15,30,36,0.92); align-items: center; justify-content: center; padding: 24px;
+}
+.load-error-box {
+background: #fff; border-radius: 14px; padding: 28px 24px; max-width: 380px; text-align: center;
+}
+.load-error-box h2 { margin: 0 0 10px 0; font-size: 18px; color: var(--ink); }
+.load-error-box p { font-size: 14px; color: var(--muted); line-height: 1.5; margin: 8px 0; }
+.load-error-icon { font-size: 40px; margin-bottom: 8px; }
+.load-error-status { font-size: 12px; color: var(--muted); margin-top: 12px; }
+.ice-strip {
+position: absolute;
+bottom: 0; left: 0; right: 0;
+height: 6px;
+background: repeating-linear-gradient(90deg, #4FA6BF 0 18px, #6FC1D6 18px 36px);
+}
+.refresh-btn {
+position: absolute; top: 14px; right: 14px;
+background: rgba(255,255,255,0.12); border: none; color: #fff;
+font-size: 16px; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+}
+.refresh-btn.spinning { animation: spin 0.6s linear; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.tabs {
+display: flex;
+gap: 8px;
+max-width: 720px;
+margin: -26px auto 0 auto;
+padding: 0 12px;
+position: relative;
+z-index: 2;
+}
+.tab-btn {
+flex: 1;
+padding: 12px 10px;
+border-radius: 10px 10px 0 0;
+border: 1px solid var(--border);
+background: #DCEBF0;
+color: var(--primary-dark);
+font-weight: 600;
+font-size: 13.5px;
+cursor: pointer;
+text-align: center;
+}
+.tab-btn.active {
+background: var(--card-bg);
+border-bottom-color: var(--card-bg);
+color: var(--primary);
+}
+.container {
+max-width: 720px;
+margin: 0 auto;
+padding: 16px 12px 0 12px;
+}
+.actions-bar {
+display: flex;
+gap: 10px;
+margin-bottom: 16px;
+}
+.btn {
+border: none;
+border-radius: 8px;
+padding: 12px 14px;
+font-size: 14px;
+font-weight: 600;
+cursor: pointer;
+flex: 1;
+}
+.btn-saida { background: var(--saida); color: #fff; }
+.btn-transfer { background: var(--transfer); color: #fff; }
+.btn-entrada { background: var(--entrada); color: #fff; }
+.btn-secondary { background: var(--primary-light); color: var(--primary-dark); }
+.btn:active { opacity: 0.85; }
+.card {
+background: var(--card-bg);
+border: 1px solid var(--border);
+border-radius: 10px;
+margin-bottom: 16px;
+overflow: hidden;
+}
+.card-header {
+background: var(--primary);
+color: #fff;
+padding: 10px 14px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+font-weight: 700;
+font-size: 14.5px;
+}
+.card-header .badge {
+font-weight: 600;
+font-size: 12px;
+background: rgba(255,255,255,0.18);
+padding: 3px 9px;
+border-radius: 999px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 10px; text-align: center; border-bottom: 1px solid var(--border); }
+th { background: var(--primary-light); color: var(--primary-dark); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.3px; }
+td.item { text-align: left; font-weight: 600; }
+td.num { font-variant-numeric: tabular-nums; font-family: 'SFMono-Regular', Consolas, monospace; }
+td.total { font-weight: 700; background: #F5FAFB; }
+td.onde { text-align: left; font-size: 11.5px; color: var(--muted); }
+.onde-link { cursor: pointer; color: var(--primary); text-decoration: underline dotted; text-underline-offset: 2px; }
+.onde-link:active { opacity: 0.7; }
+.onde-ss-link { color: #2323FF; font-weight: 700; }
+.reserve-venda-alert { cursor: pointer; font-size: 10px; vertical-align: middle; margin-left: 1px; }
+.reserve-venda-alert-big { cursor: pointer; font-size: 17px; vertical-align: middle; line-height: 1; }
+.qtd-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.qtd-btn { min-width: 40px; padding: 8px 10px; border: 1.5px solid var(--primary); border-radius: 8px; background: var(--card-bg); color: var(--primary); font-size: 14px; font-weight: 600; cursor: pointer; }
+.qtd-btn:active { background: var(--primary-light); }
+.qtd-btn-outra { border-style: dashed; font-weight: 500; color: var(--muted); border-color: var(--muted); }
+.qtd-btn-selected { background: var(--primary); color: #fff; border-color: var(--primary-dark); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.35); }
+.qtd-btn-selected.qtd-btn-outra { background: var(--muted); color: #fff; border-color: var(--muted); }
+input[type="number"].qtd-input-manual-active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
+.qtd-buttons-empty { font-size: 12.5px; color: var(--saida); }
+.repo-qty-input { width: 52px; padding: 6px 4px; border: 1px solid var(--border); border-radius: 6px; text-align: center; font-size: 13px; }
+.repo-remove-btn { border: none; background: none; color: var(--saida); font-size: 15px; cursor: pointer; padding: 4px; }
+.transfer-pack-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.transfer-pack-box { border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.transfer-pack-label { font-weight: 700; font-size: 12.5px; color: var(--ink); margin-bottom: 2px; }
+.transfer-pack-hint { margin: 0 0 6px 0; font-size: 11px; }
+.transfer-pack-box .qtd-buttons { gap: 4px; }
+.transfer-pack-box .qtd-btn { min-width: 32px; padding: 6px 8px; font-size: 12.5px; }
+.transfer-pack-box input[type="number"] { width: 100%; padding: 6px; border: 1px solid var(--border); border-radius: 6px; text-align: center; }
+.ss-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 12px; }
+.ss-box { border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--card-bg); cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-height: 205px; }
+.ss-box:active { background: var(--primary-light); }
+.ss-box-empty { align-items: center; justify-content: center; border-style: dashed; color: var(--muted); }
+.ss-box-empty-label { font-size: 12.5px; font-weight: 600; }
+.ss-box-item { font-weight: 700; font-size: 12.5px; line-height: 1.3; }
+.ss-box-line { font-size: 10.5px; color: var(--muted); line-height: 1.3; }
+.ss-box-placeholder { font-style: italic; opacity: 0.7; }
+.ss-box-swap-btn { margin-top: 4px; font-size: 10.5px; padding: 4px 6px; width: 100%; opacity: 0.55; cursor: not-allowed; }
+.ss-box-selected { outline: 2.5px solid var(--primary); outline-offset: -2.5px; }
+.ss-box-repo-marked { outline: 2.5px solid var(--transfer); outline-offset: -2.5px; }
+.ss-repo-marked-badge { font-size: 10px; vertical-align: middle; }
+.ss-situacao-select { width: 100%; font-size: 11px; padding: 4px 5px; border: 1px solid var(--border); border-radius: 6px; margin: 3px 0; background: var(--card-bg); color: var(--ink); font-weight: 700; }
+.ss-fim-badge { display: inline-block; margin-left: 4px; padding: 1px 5px; border-radius: 4px; font-size: 9px; font-weight: 800; background: #5C1A1A; color: #fff; vertical-align: middle; }
+.ss-sit-bar { width: 100%; text-align: center; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; padding: 3px 4px; border-radius: 5px; margin: 3px 0 1px 0; }
+.ss-prod-row { margin: 3px 0 1px 0; }
+.ss-prod-input { width: 100%; font-size: 10.5px; padding: 4px 5px; border: 1px solid var(--border); border-radius: 6px; text-align: center; background: var(--card-bg); }
+.ss-prod-alert { background: var(--entrada-light); border-color: var(--entrada); }
+.ss-falta-label { display: flex; align-items: center; gap: 3px; font-size: 9.5px; color: var(--muted); margin-bottom: 2px; }
+.ss-falta-label input[type="checkbox"] { transform: scale(0.8); margin: 0; }
+.ss-falta-auto-badge { font-size: 9.5px; color: var(--entrada); font-weight: 700; cursor: pointer; text-decoration: underline dotted; margin-bottom: 3px; }
+@media (max-width: 480px) { .ss-grid { grid-template-columns: repeat(3, 1fr); } }
+@keyframes cardJumpHighlight { 0%, 100% { box-shadow: none; } 20%, 60% { box-shadow: 0 0 0 3px var(--primary); } }
+.card-jump-highlight { animation: cardJumpHighlight 1.6s ease; }
+tr:last-child td { border-bottom: none; }
+.zero { color: #B7C4C8; }
+.cat-row td {
+font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px;
+font-weight: 700; text-align: left; padding: 6px 10px;
+border-top: 2px solid; border-bottom: 1px solid var(--border);
+}
+.cat-dot {
+display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+margin-right: 7px; vertical-align: middle;
+}
+.produced-date { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 15px; }
+.lote-expand-trigger { cursor: pointer; }
+.lote-badge { display: inline-block; padding: 1px 5px; border-radius: 4px; background: var(--primary-light); color: var(--primary); font-weight: 700; font-size: 9.5px; margin-left: 3px; }
+.lote-detail-row td { padding: 0 !important; border-top: none !important; }
+.lote-detail-wrap { background: var(--bg); padding: 6px 12px 8px 30px; border-bottom: 1px solid var(--border); }
+.lote-detail-line { display: flex; gap: 10px; align-items: center; font-size: 11px; padding: 3px 0; color: var(--ink); }
+.lote-detail-pack { font-weight: 700; min-width: 40px; color: var(--muted); }
+.lote-detail-date { flex: 1; }
+.lote-detail-qty { font-weight: 700; }
+.summary-card { border: 1.5px solid var(--primary-dark); }
+.summary-header { background: var(--primary-dark); }
+.summary-subbar {
+display: flex; gap: 18px; padding: 8px 14px;
+background: var(--primary-light); color: var(--primary-dark);
+font-size: 13px; border-bottom: 1px solid var(--border);
+}
+.oos-card { border: 1.5px solid var(--saida); margin-bottom: 16px; }
+.oos-header { background: var(--saida); }
+.oos-add { border: 1px solid var(--entrada); color: var(--entrada); background: #fff; border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 600; }
+.low-stock { color: #B45309; font-weight: 700; background: #FEF3E2; }
+.num-click { cursor: pointer; border-radius: 6px; transition: background 0.12s; }
+.num-click:active { background: var(--primary-light); }
+@media (hover: hover) {
+.num-click:hover { background: var(--primary-light); text-decoration: underline dotted; }
+}
+.row-actions { display: flex; gap: 4px; justify-content: center; }
+.select-toggle-btn {
+border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.1); color: #fff;
+font-size: 11.5px; font-weight: 600; padding: 5px 9px; border-radius: 6px; cursor: pointer;
+}
+.select-toggle-btn.active { background: #fff; color: var(--primary-dark); }
+.selection-bar {
+display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+padding: 8px 14px; background: var(--primary-light); border-bottom: 1px solid var(--border);
+font-size: 12.5px; color: var(--primary-dark); font-weight: 600;
+}
+.select-all-btn {
+border: 1px solid var(--primary); background: #fff; color: var(--primary);
+font-size: 11.5px; font-weight: 600; padding: 5px 9px; border-radius: 6px; cursor: pointer;
+}
+.bulk-transfer-btn { padding: 6px 12px; font-size: 12.5px; margin-left: auto; }
+.bulk-transfer-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.checkbox-cell { width: 30px; text-align: center; }
+.row-check { width: 17px; height: 17px; cursor: pointer; }
+tr.row-selected td { background: var(--primary-light) !important; }
+.icon-btn {
+border: none; background: none; cursor: pointer;
+font-size: 15px; padding: 3px 6px; border-radius: 5px;
+}
+.icon-btn.saida { color: var(--saida); }
+.icon-btn.transfer { color: var(--transfer); }
+.icon-btn.entrada { color: var(--entrada); }
+.icon-btn:active { background: var(--primary-light); }
+.table-wrap { overflow-x: auto; }
+/* History */
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.filters select, .filters input {
+padding: 9px 10px; border-radius: 7px; border: 1px solid var(--border);
+font-size: 13px; background: #fff; color: var(--ink);
+}
+.filters input[type=text] { flex: 1; min-width: 140px; }
+.tag { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; display: inline-block; }
+.tag-saida { background: var(--saida-light); color: var(--saida); }
+.tag-transfer { background: var(--transfer-light); color: var(--transfer); }
+.tag-entrada { background: var(--entrada-light); color: var(--entrada); }
+.hist-empty { text-align: center; color: var(--muted); padding: 30px 10px; font-size: 13px; }
+.del-btn { border: none; background: none; color: var(--danger); cursor: pointer; font-size: 13px; }
+/* Modal */
+.overlay {
+display: none;
+position: fixed; inset: 0; background: rgba(15,30,36,0.55);
+align-items: flex-end; justify-content: center; z-index: 50;
+}
+.overlay.open { display: flex; }
+.modal {
+background: #fff; width: 100%; max-width: 480px;
+border-radius: 16px 16px 0 0; padding: 18px 18px 22px 18px;
+max-height: 92vh; overflow-y: auto;
+}
+@media (min-width: 560px) {
+.overlay { align-items: center; }
+.modal { border-radius: 14px; }
+}
+.modal h2 { margin: 0 0 14px 0; font-size: 17px; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+.field select, .field input, .field textarea {
+width: 100%; padding: 10px 11px; border-radius: 8px; border: 1px solid var(--border);
+font-size: 14px; font-family: inherit; background: #fff;
+}
+.field textarea { resize: vertical; min-height: 50px; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.error-msg { color: var(--danger); font-size: 12.5px; margin-top: 4px; display: none; }
+.modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.modal-actions .btn-cancel {
+background: #EEF2F3; color: var(--muted); flex: 1;
+}
+.modal-actions .btn-confirm { flex: 2; }
+.toast {
+position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+background: var(--primary-dark); color: #fff; padding: 10px 18px;
+border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none;
+transition: opacity 0.25s; z-index: 100;
+}
+.toast.show { opacity: 1; }
+h3.section-title { font-size: 13px; color: var(--muted); margin: 4px 0 8px 4px; text-transform: uppercase; letter-spacing: 0.4px; }
+h3.group-title { margin-top: 20px; font-size: 12.5px; font-weight: 700; color: var(--primary-dark); }
+h3.group-title:first-of-type { margin-top: 4px; }
+.freezer-desc { font-size: 10.5px; font-weight: 400; color: #C7DCE4; margin-top: 1px; }
+@media print {
+body.print-mode .topbar, body.print-mode .tabs, body.print-mode .actions-bar,
+body.print-mode .print-btn, body.print-mode .filters,
+body.print-mode .del-btn, body.print-mode th:last-child, body.print-mode .history-actions-col,
+body.print-mode .toast { display: none !important; }
+body.print-mode { background: #fff; padding: 0; }
+body.print-mode .container { max-width: 100%; padding: 0; }
+body.print-mode .card { border: 1px solid #999; break-inside: avoid; margin-bottom: 14px; }
+body.print-mode .card-header {
+background: #eee !important; color: #000 !important;
+-webkit-print-color-adjust: exact; print-color-adjust: exact;
+border-bottom: 1px solid #999;
+}
+body.print-mode table { font-size: 12px; }
+body.print-mode .cat-row td, body.print-mode .cat-dot {
+-webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+body.print-mode .tag-saida, body.print-mode .tag-transfer {
+-webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+<button id="refresh-btn" class="refresh-btn" onclick="refreshFromStorage(true)" title="Atualizar agora">🔄</button>
+<h1>Mapa Freezer · Produtos Acabados</h1>
+<div class="sub">Inventiva Sorveteria — estoque compartilhado com a equipe</div>
+<div id="last-updated"></div>
+<div class="ice-strip"></div>
+</div>
+<div id="conn-banner" class="conn-banner">⚠ Sem conexão com o servidor de dados — <strong>suas alterações NÃO estão sendo salvas.</strong> Recarregue a página.</div>
+<div class="tabs">
+<div class="tab-btn active" id="tab-estoque" onclick="switchTab('estoque')">Estoque atual</div>
+<div class="tab-btn" id="tab-historico" onclick="switchTab('historico')">Histórico</div>
+<div class="tab-btn" id="tab-reposicao" onclick="switchTab('reposicao')">Reposição</div>
+<div class="tab-btn" id="tab-relatorios" onclick="switchTab('relatorios')">Relatórios</div>
+</div>
+<div class="container">
+<div id="view-estoque">
+<div class="actions-bar">
+<button class="btn btn-entrada" onclick="openEntradaModal()">+ Entrada</button>
+<button class="btn btn-saida" onclick="openSaidaModal()">− Saída</button>
+<button class="btn btn-transfer" onclick="openTransferModal()">⇄ Transferir</button>
+</div>
+<button class="btn btn-secondary print-btn" style="width:100%; margin-bottom:14px;" onclick="printStock()">🖨 Imprimir mapa atual</button>
+<button class="btn btn-secondary print-btn" style="width:100%; margin-bottom:14px;" onclick="exportBackup()">⬇ Exportar backup (.json)</button>
+<button class="btn btn-secondary print-btn" style="width:100%; margin-bottom:14px;" onclick="document.getElementById('restore-file-input').click()">⬆ Restaurar backup (.json)</button>
+<input type="file" id="restore-file-input" accept="*/*" style="display:none" onchange="onRestoreFileSelected(event)">
+<input type="file" id="insumos-import-file-input" accept="application/json,.json" style="display:none" onchange="onInsumosImportFileSelected(event)">
+<button class="btn btn-secondary print-btn" style="width:100%; margin-bottom:14px;" onclick="openConfigModal()">⚙ Configurar limite de estoque baixo</button>
+<button class="btn btn-secondary print-btn" style="width:100%; margin-bottom:14px;" onclick="openAuditEmbalagensModal()">🔍 Verificar regras de embalagem por freezer</button>
+<div id="stock-cards"></div>
+<div id="selfservice-panel"></div>
+</div>
+<div id="view-historico" style="display:none;">
+<div class="filters">
+<select id="filter-freezer" onchange="renderHistory()"></select>
+<select id="filter-tipo" onchange="renderHistory()">
+<option value="todos">Todos os tipos</option>
+<option value="entrada">Somente entradas</option>
+<option value="saida">Somente saídas</option>
+<option value="transferencia">Somente transferências</option>
+</select>
+<input type="text" id="filter-busca" placeholder="Buscar item..." oninput="renderHistory()">
+</div>
+<button class="btn btn-secondary print-btn" style="width:100%; margin-bottom:14px;" onclick="printHistory()">🖨 Imprimir histórico</button>
+<div class="table-wrap">
+<table id="history-table">
+<thead>
+<tr>
+<th>Data</th><th>Tipo</th><th>Freezer</th><th>Item</th><th>Tam.</th><th>Qtd</th><th>Motivo / Destino</th><th>Quem</th><th></th>
+</tr>
+</thead>
+<tbody id="history-body"></tbody>
+</table>
+</div>
+<div id="history-empty" class="hist-empty" style="display:none;">Nenhum registro encontrado.</div>
+</div>
+<div id="view-reposicao" style="display:none;">
+<button class="btn btn-secondary print-btn" style="width:100%; margin-bottom:14px;" onclick="printReposicao()">🖨 Imprimir lista de reposição</button>
+<button class="btn btn-cancel" style="width:100%; margin-bottom:14px;" onclick="clearReposicao()">🗑 Limpar lista</button>
+<div id="reposicao-list"></div>
+<div id="reposicao-empty" class="hist-empty" style="display:none;">Nenhum sabor marcado para reposição ainda. Marque sabores na aba "Estoque atual" (botão "📋 Marcar reposição" no Resumo geral).</div>
+</div>
+<div id="view-relatorios" style="display:none;">
+<h3 class="section-title group-title">Produção necessária consolidada (Self Service)</h3>
+<div class="hint" style="margin-bottom:8px;">Soma o campo "produção necessária" preenchido em todas as posições dos dois freezers Self Service.</div>
+<div id="relatorios-producao-wrap"></div>
+<h3 class="section-title group-title" style="margin-top:20px;">Tempo até vender (giro do Self Service)</h3>
+<div class="hint" style="margin-bottom:8px;">Registrado automaticamente toda vez que um "Trocar sorvete" substitui um sabor que já estava ocupando a posição.</div>
+<div class="filters">
+<select id="relatorio-giro-freezer" onchange="renderRelatoriosGiro()">
+<option value="todos">Todos os freezers</option>
+<option value="Self Service A">Self Service A</option>
+<option value="Self Service B">Self Service B</option>
+</select>
+<input type="text" id="relatorio-giro-sabor" placeholder="Buscar sabor..." oninput="renderRelatoriosGiro()">
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="text-align:left;">Sabor</th><th>Freezer</th><th>Chegou → Saiu</th><th>Dias</th></tr></thead>
+<tbody id="relatorio-giro-body"></tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Modal: Configurar limites de estoque baixo -->
+<div class="overlay" id="modal-config">
+<div class="modal">
+<h2>Limite de estoque baixo</h2>
+<div class="field">
+<label>Limite padrão (potes)</label>
+<input type="number" id="config-default" min="0" value="2">
+<div class="hint">Usado para qualquer sabor sem um limite específico abaixo.</div>
+</div>
+<div class="field">
+<label>Limites por sabor (opcional)</label>
+<div class="hint" style="margin-bottom:8px;">Deixe em branco para usar o limite padrão.</div>
+<div id="config-item-list" style="max-height:40vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px 10px;"></div>
+</div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-config')">Cancelar</button>
+<button class="btn btn-entrada btn-confirm" onclick="confirmConfig()">Salvar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Quantidade de reposição (clique no sabor, no Resumo Geral em modo reposição) -->
+<div class="overlay" id="modal-reposicao-qtd">
+<div class="modal">
+<h2 id="reposicao-qtd-title">Reposição</h2>
+<div class="hint" style="margin-bottom:8px;">Informe a quantidade a trazer para a loja, por embalagem.</div>
+<div class="transfer-pack-grid" id="reposicao-qtd-grid"></div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-reposicao-qtd')">Cancelar</button>
+<button class="btn btn-entrada btn-confirm" onclick="confirmReposicaoQtd()">Salvar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Confirmação (substitui alert/confirm nativos, bloqueados no preview) -->
+<div class="overlay" id="modal-confirm">
+<div class="modal">
+<h2>Confirmação</h2>
+<p id="confirm-message" style="font-size:14px; color:var(--ink); line-height:1.5;"></p>
+<div class="modal-actions">
+<button id="confirm-cancel-btn" class="btn btn-cancel">Cancelar</button>
+<button id="confirm-ok-btn" class="btn btn-saida">Confirmar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Auditoria de regras de embalagem por freezer -->
+<div class="overlay" id="modal-audit-embalagens">
+<div class="modal">
+<h2 id="audit-embalagens-title">Verificar regras de embalagem</h2>
+<div class="hint" style="margin-bottom:10px;">Combinações de freezer + embalagem que hoje estão fora da regra oficial (não foi apagado nada — só um relatório).</div>
+<div id="audit-embalagens-list" style="display:flex; flex-direction:column; gap:8px; max-height:55vh; overflow-y:auto;"></div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-audit-embalagens')">Fechar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Ação rápida -->
+<div class="overlay" id="modal-quick">
+<div class="modal">
+<h2 id="quick-title">Item</h2>
+<div class="field" style="display:flex; flex-direction:column; gap:10px;">
+<button class="btn btn-entrada" style="text-align:left; padding:14px 16px;" onclick="quickEntrada()">+ Entrada de mercadoria</button>
+<button class="btn btn-saida" style="text-align:left; padding:14px 16px;" onclick="quickSaida()">− Registrar saída</button>
+<button class="btn btn-transfer" style="text-align:left; padding:14px 16px;" onclick="quickTransfer()">⇄ Transferir para outro local</button>
+</div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-quick')" style="flex:1;">Cancelar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Definir sabor de uma posição do Self Service (a data de fabricação é preenchida
+automaticamente pelo FIFO do lote consumido na transferência real — não é mais digitada aqui) -->
+<div class="overlay" id="modal-ss-occupy">
+<div class="modal">
+<h2 id="ss-occupy-title">Posição do Self Service</h2>
+<div class="field">
+<label>Sabor</label>
+<input type="text" id="ss-occupy-item" list="ss-occupy-item-list" placeholder="Digite o sabor">
+<datalist id="ss-occupy-item-list"></datalist>
+<div class="hint">Se for um sabor novo para a posição, é feita uma transferência real de 1 Cx5L do estoque de reserva (Loja, depois Fábrica) — a data de fabricação vem automaticamente do lote mais antigo debitado, e a data de abertura é registrada como agora.</div>
+</div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-ss-occupy')">Cancelar</button>
+<button class="btn btn-saida" id="ss-occupy-clear-btn" onclick="confirmSelfServiceClear()" style="display:none;">Esvaziar posição</button>
+<button class="btn btn-entrada btn-confirm" onclick="confirmSelfServiceOccupy()">Salvar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Trocar sorvete (Self Service) — transferência real de 1 Cx5L -->
+<div class="overlay" id="modal-ss-trocar">
+<div class="modal">
+<h2 id="ss-trocar-title">Trocar sorvete</h2>
+<div class="hint" style="margin-bottom:8px;">Escolha o sabor que vai ocupar esta posição. Será transferido 1 Cx5L da origem indicada.</div>
+<div id="ss-trocar-list" style="display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto;"></div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-ss-trocar')">Cancelar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Escolher freezer de origem (Self Service) — usado por "Trocar sorvete" e por "Ocupar posição" -->
+<div class="overlay" id="modal-ss-origin">
+<div class="modal">
+<h2 id="ss-origin-title">Escolher freezer de origem</h2>
+<div class="hint" style="margin-bottom:8px;">Só aparecem freezers com Cx5L desse sabor em estoque. Será transferida 1 Cx5L do freezer escolhido.</div>
+<div id="ss-origin-list" style="display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto;"></div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-ss-origin')">Cancelar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Insumos por sabor (ficha + status manual "em falta", usado no cruzamento automático do campo de produção necessária) -->
+<div class="overlay" id="modal-insumos-config">
+<div class="modal">
+<h2>Insumos por sabor</h2>
+<div class="field">
+<label>Ficha: quais insumos cada sabor usa</label>
+<div class="hint" style="margin-bottom:8px;">Digite os insumos separados por vírgula (ex: amora congelada, creme de leite fresco). Deixe em branco para remover a ficha do sabor.</div>
+<div id="insumos-ficha-list" style="max-height:35vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px 10px;"></div>
+</div>
+<div class="field">
+<label>Status atual dos insumos</label>
+<div class="hint" style="margin-bottom:8px;">Marque os insumos que estão em falta agora. Isso já é usado automaticamente no campo "produção necessária" do Self Service.</div>
+<div id="insumos-status-list" style="max-height:25vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px 10px;"></div>
+</div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-insumos-config')">Cancelar</button>
+<button class="btn btn-entrada btn-confirm" onclick="confirmInsumosConfig()">Salvar</button>
+</div>
+</div>
+</div>
+<!-- Modal: Entrada -->
+<div class="overlay" id="modal-entrada">
+<div class="modal">
+<h2>Registrar entrada de mercadoria</h2>
+<div class="field">
+<label>Freezer / local</label>
+<select id="entrada-freezer" onchange="onEntradaFreezerChange()"></select>
+</div>
+<div class="field">
+<label>Sabor / item</label>
+<input type="text" id="entrada-item" list="entrada-item-list" placeholder="Digite o sabor (novo ou existente)" oninput="onEntradaItemInput()">
+<datalist id="entrada-item-list"></datalist>
+<div class="hint">Pode digitar um sabor novo ou escolher um já existente na lista.</div>
+</div>
+<div class="field">
+<label>Categoria</label>
+<select id="entrada-categoria" onchange="onEntradaCategoriaChange()">
+<option value="s/a">Sorvete S/A (sem açúcar)</option>
+<option value="sorbet">Sorbet</option>
+<option value="sorvete" selected>Sorvete</option>
+<option value="acai">Açaí</option>
+</select>
+<div class="hint">Se o sabor já existir, a categoria é preenchida automaticamente.</div>
+</div>
+<div class="field">
+<label>Embalagens a receber</label>
+<div class="hint" style="margin-bottom:8px;">Informe a quantidade em uma ou mais embalagens do mesmo sabor.</div>
+<div class="transfer-pack-grid" id="entrada-pack-grid"></div>
+<div class="hint" id="entrada-pack-empty-hint" style="display:none; color:var(--saida);"></div>
+<div class="error-msg" id="entrada-erro"></div>
+</div>
+<div class="field">
+<label>Data de produção</label>
+<input type="text" id="entrada-data-producao" placeholder="Toque para selecionar" readonly onclick="openDataProducaoPicker()">
+<div class="hint">Fica marcada nesse sabor, nesse freezer, e vale para todas as embalagens desta entrada.</div>
+</div>
+<div class="field">
+<label>Quem está registrando</label>
+<input type="text" id="entrada-quem" placeholder="Seu nome">
+</div>
+<div class="field">
+<label>Observação (opcional)</label>
+<textarea id="entrada-obs" placeholder="Fornecedor, lote, etc."></textarea>
+</div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-entrada')">Cancelar</button>
+<button class="btn btn-entrada btn-confirm" onclick="confirmEntrada()">Confirmar entrada</button>
+</div>
+</div>
+</div>
+<!-- Modal: Data de produção -->
+<div class="overlay" id="modal-data-producao">
+<div class="modal">
+<h2>Data de produção</h2>
+<div id="data-producao-step-hoje">
+<div class="modal-actions" style="flex-direction:column; gap:10px;">
+<button class="btn btn-entrada" style="width:100%;" onclick="pickDataProducaoHoje()"><span id="data-producao-hoje-label">📅 Hoje</span></button>
+<button class="btn btn-secondary" style="width:100%;" onclick="showDataProducaoCustom()">🗓 Escolher outra data</button>
+<button class="btn btn-cancel" style="width:100%;" onclick="closeModal('modal-data-producao')">Cancelar</button>
+</div>
+</div>
+<div id="data-producao-step-custom" style="display:none;">
+<div class="field">
+<label>Digitar data</label>
+<input type="text" id="data-producao-input-texto" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="onDataProducaoTextoInput()">
+</div>
+<div class="field">
+<label>Ou abrir calendário</label>
+<input type="date" id="data-producao-input-calendario" onchange="onDataProducaoCalendarioChange()">
+</div>
+<div class="error-msg" id="data-producao-erro"></div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="voltarDataProducaoStep()">Voltar</button>
+<button class="btn btn-entrada btn-confirm" onclick="confirmDataProducaoCustom()">Usar esta data</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Modal: Saída -->
+<div class="overlay" id="modal-saida">
+<div class="modal">
+<h2>Registrar saída</h2>
+<div class="field">
+<label>Freezer</label>
+<select id="saida-freezer" onchange="onSaidaFreezerChange()"></select>
+</div>
+<div class="field">
+<label>Item</label>
+<select id="saida-item" onchange="onSaidaItemChange()"></select>
+</div>
+<div class="field">
+<label>Tamanho</label>
+<select id="saida-tamanho" onchange="onSaidaTamanhoChange()"></select>
+<div class="hint" id="saida-estoque-atual"></div>
+</div>
+<div class="field">
+<label>Quantidade</label>
+<div class="qtd-buttons" id="saida-qtd-buttons"></div>
+<input type="number" id="saida-qtd" min="1" value="1" style="display:none;">
+<div class="error-msg" id="saida-erro"></div>
+</div>
+<div class="field">
+<label>Motivo</label>
+<select id="saida-motivo">
+<option>Venda</option>
+<option>Quebra/Perda</option>
+<option>Consumo interno</option>
+<option>Outro</option>
+</select>
+</div>
+<div class="field">
+<label>Quem está registrando</label>
+<input type="text" id="saida-quem" placeholder="Seu nome">
+</div>
+<div class="field">
+<label>Observação (opcional)</label>
+<textarea id="saida-obs" placeholder="Detalhes adicionais..."></textarea>
+</div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-saida')">Cancelar</button>
+<button class="btn btn-saida btn-confirm" onclick="confirmSaida()">Confirmar saída</button>
+</div>
+</div>
+</div>
+<!-- Modal: Transferência -->
+<div class="overlay" id="modal-transfer">
+<div class="modal">
+<h2>Transferir entre freezers</h2>
+<div class="field">
+<label>Freezer de origem</label>
+<select id="transfer-origem" onchange="onTransferOrigemChange()"></select>
+</div>
+<div class="field">
+<label>Item</label>
+<select id="transfer-item" onchange="onTransferItemChange()"></select>
+<div class="hint" id="transfer-item-hint" style="display:none; color:var(--saida);"></div>
+</div>
+<div class="field">
+<label>Embalagens a transferir</label>
+<div class="hint" style="margin-bottom:8px;">Informe a quantidade em uma ou mais embalagens do mesmo sabor.</div>
+<div class="transfer-pack-grid" id="transfer-pack-grid"></div>
+<div class="hint" id="transfer-pack-empty-hint" style="display:none; color:var(--saida);"></div>
+<div class="error-msg" id="transfer-erro"></div>
+</div>
+<div class="field">
+<label>Vai para</label>
+<select id="transfer-destino" onchange="onTransferDestinoChange()"></select>
+<div class="hint">Cada freezer só aceita determinadas embalagens (ex.: Self Service só Cx5L; Freezer vertical vegano/sorvetes só potes) — a lista de "Item" e as embalagens acima se ajustam automaticamente ao destino escolhido.</div>
+</div>
+<div class="field">
+<label>Quem está registrando</label>
+<input type="text" id="transfer-quem" placeholder="Seu nome">
+</div>
+<div class="field">
+<label>Observação (opcional)</label>
+<textarea id="transfer-obs" placeholder="Detalhes adicionais..."></textarea>
+</div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-transfer')">Cancelar</button>
+<button class="btn btn-transfer btn-confirm" onclick="confirmTransfer()">Confirmar transferência</button>
+</div>
+</div>
+</div>
+<!-- Modal: Transferência em lote -->
+<div class="overlay" id="modal-bulk-transfer">
+<div class="modal">
+<h2>Transferir sabores selecionados</h2>
+<div class="field">
+<label>De</label>
+<div id="bulk-origem-label" style="font-weight:700; font-size:14px;"></div>
+</div>
+<div class="field">
+<label>Sabores selecionados</label>
+<div id="bulk-item-list" style="max-height:30vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:13px;"></div>
+<div class="hint">Transfere todo o estoque atual (todos os tamanhos) de cada sabor marcado.</div>
+</div>
+<div class="field">
+<label>Vai para</label>
+<select id="bulk-destino"></select>
+</div>
+<div class="field">
+<label>Quem está registrando</label>
+<input type="text" id="bulk-quem" placeholder="Seu nome">
+<div class="error-msg" id="bulk-erro"></div>
+</div>
+<div class="field">
+<label>Observação (opcional)</label>
+<textarea id="bulk-obs" placeholder="Detalhes adicionais..."></textarea>
+</div>
+<div class="modal-actions">
+<button class="btn btn-cancel" onclick="closeModal('modal-bulk-transfer')">Cancelar</button>
+<button class="btn btn-transfer btn-confirm" onclick="confirmBulkTransfer()">Confirmar transferência</button>
+</div>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="load-error-screen" class="load-error-screen">
+<div class="load-error-box">
+<div class="load-error-icon">⚠️</div>
+<h2>Não foi possível carregar os dados</h2>
+<p>Não foi possível confirmar os dados salvos neste momento. Para <strong>proteger o estoque já salvo</strong>, o app não vai abrir com dados vazios.</p>
+<p>Aguarde alguns segundos e toque em recarregar. Não registre nada até os dados aparecerem corretamente.</p>
+<button class="btn btn-transfer" onclick="loadData()" style="margin-top:14px;">🔄 Tentar novamente</button>
+<div class="load-error-status">Tentando reconectar automaticamente...</div>
+</div>
+</div>
+<script>
+/* ---------- Configuração do Firebase ---------- */
+/* Cole aqui o firebaseConfig copiado do console do Firebase.
+Enquanto estiver com os valores de exemplo abaixo, o app usa
+automaticamente localStorage (sem sincronizar entre dispositivos). */
+const firebaseConfig = {
+apiKey: "AIzaSyApP2EqEPn18nXfOva0aVYWxeK-XNzgCQ0",
+authDomain: "app-controle-freezer-sorvetes.firebaseapp.com",
+databaseURL: "https://app-controle-freezer-sorvetes-default-rtdb.firebaseio.com",
+projectId: "app-controle-freezer-sorvetes",
+storageBucket: "app-controle-freezer-sorvetes.firebasestorage.app",
+messagingSenderId: "87283986644",
+appId: "1:87283986644:web:c45b9fc84c095fb6c40b41"
+};
+/* ---------- Camada de storage com fallback ---------- */
+const STORAGE_KEY = 'freezer-data';
+let firebaseDB = null;
+let firebaseReady = false;
+(function initFirebase() {
+if (firebaseConfig.apiKey === "SUA_API_KEY_AQUI") {
+console.info('Firebase não configurado — usando armazenamento local (sem sincronização entre dispositivos).');
+return;
+}
+try {
+firebase.initializeApp(firebaseConfig);
+firebaseDB = firebase.database();
+firebaseReady = true;
+console.info('Firebase conectado — sincronização em tempo real ativa.');
+} catch (e) {
+console.error('Falha ao inicializar Firebase, usando armazenamento local.', e);
+}
+})();
+const storageLayer = {
+async get(key) {
+if (firebaseReady) {
+try {
+const snap = await firebaseDB.ref(key).once('value');
+const val = snap.val();
+if (val) return val;
+} catch (e) {
+console.warn('Firebase get falhou, tentando fallback.', e.message);
+}
+}
+if (window.storage && typeof window.storage.get === 'function') {
+try {
+const res = await window.storage.get(key, true);
+if (res && res.value) return res.value;
+} catch (e) {
+console.warn('window.storage indisponível, usando localStorage.', e.message);
+}
+}
+try { return localStorage.getItem(key); } catch (e) { return null; }
+},
+async set(key, value) {
+// Sempre grava uma cópia local (funciona offline / sem Firebase configurado)
+try { localStorage.setItem(key, value); } catch (e) { console.error('localStorage.set falhou:', e); }
+if (firebaseReady) {
+try {
+await firebaseDB.ref(key).set(value);
+return;
+} catch (e) {
+console.warn('Firebase set falhou, dado ficou salvo apenas localmente.', e.message);
+}
+}
+if (window.storage && typeof window.storage.set === 'function') {
+try {
+await window.storage.set(key, value, true);
+} catch (e) {
+console.warn('window.storage.set falhou.', e.message);
+}
+}
+},
+// Escuta mudanças em tempo real (só funciona com Firebase configurado)
+onRemoteChange(key, callback) {
+if (!firebaseReady) return;
+firebaseDB.ref(key).on('value', (snap) => {
+const val = snap.val();
+if (val) callback(val);
+});
+}
+};
+const SIZE_LABEL = { cx5L: 'Caixa 5L', pt2L: 'Pote 2L', pt1L: 'Pote 1L', pt750ml: 'Pote 750ml' };
+const CATEGORY_ORDER = ['s/a', 'sorbet', 'sorvete', 'acai'];
+const CATEGORY_META = {
+'s/a': { label: 'Sorvetes S/A (sem açúcar)', color: '#B98900', bg: '#FBF3E1' },
+'sorbet': { label: 'Sorbets', color: '#2C8FB0', bg: '#E7F4F8' },
+'sorvete':{ label: 'Sorvetes', color: '#17546F', bg: '#E9F1F4' },
+'acai': { label: 'Açaís', color: '#6A3B84', bg: '#F1E9F5' }
+};
+const DEFAULT_CATEGORIES = {
+"Chocb s/a": "s/a", "CFV s/a": "s/a", "Nut s/a": "s/a",
+"Sb. Amora": "sorbet", "Sb. Graviola": "sorbet", "Sb. Caju": "sorbet",
+"Sb. Maracujá": "sorbet", "Sb. Laranja": "sorbet",
+"Choc Coc": "sorvete", "Chocb": "sorvete", "Banana Flamb": "sorvete",
+"PV": "sorvete", "abacaxi": "sorvete", "Creme": "sorvete",
+"Caram Flor": "sorvete", "Chocomenta": "sorvete", "Raf": "sorvete",
+"Floc": "sorvete", "Doce de Leite": "sorvete", "Paçoca": "sorvete",
+"Açaí Selv": "acai", "Açaí Trad": "acai",
+"Nutella": "sorvete", "Morango": "sorvete", "Choc Caram": "sorvete",
+"Choc Coc Veg": "sorbet", "Caramel": "sorvete"
+};
+function getItemCategory(item) {
+return (state.itemCategories && state.itemCategories[item]) || 'sorvete';
+}
+const LOCATION_GROUPS = [
+{ title: 'Freezers Fábrica', locations: ['FTV 01', 'HDE 503', 'MTC 01', 'FTV 02', 'MTV 01', 'GTV 01'], color: '#F8205F' },
+{ title: 'Freezers Loja', locations: ['FTV 03'], color: '#FF9900' },
+{ title: 'Self Service', locations: ['Self Service A', 'Self Service B'], color: '#2323FF' },
+{ title: 'Vendas', locations: ['Freezer vertical (vegano)', 'Freezer vertical (sorvetes)'], color: '#FF9900' }
+];
+// Os dois freezers de venda direta ao cliente (ponto de venda) — ganham o botão "📦 Abastecer"
+// no card da aba Estoque, que reaproveita o mesmo fluxo de escolher sabor + lote de origem já
+// usado pelo Self Service, em vez do modal de Transferência genérico.
+const VENDING_FREEZERS = ['Freezer vertical (vegano)', 'Freezer vertical (sorvetes)'];
+// Locais considerados "reserva" para calcular quanto ainda existe de cada sabor
+// fora das posições do Self Service (usado no painel de grade do Self Service)
+const RESERVE_GROUP_TITLES = ['Freezers Fábrica', 'Freezers Loja'];
+function reserveLocations() {
+return LOCATION_GROUPS.filter(g => RESERVE_GROUP_TITLES.includes(g.title)).flatMap(g => g.locations);
+}
+function getReserveCx5L(item) {
+let total = 0;
+reserveLocations().forEach(loc => {
+if (state.stock[loc] && state.stock[loc][item]) total += (state.stock[loc][item].cx5L || 0);
+});
+return total;
+}
+// Locais de "venda direta ao cliente" para o alerta de "sem reserva" do Resumo Geral:
+// Self Service A/B + os dois freezers verticais de Vendas. Propositalmente diferente de
+// SUMMARY_EXCLUDED_LOCATIONS (que só tira os freezers verticais do total do Resumo Geral) —
+// aqui Self Service TAMBÉM conta como "venda direta", pois é onde o cliente se serve sozinho.
+function vendaDiretaLocations() {
+return LOCATION_GROUPS.filter(g => !RESERVE_GROUP_TITLES.includes(g.title)).flatMap(g => g.locations);
+}
+function getReserveQty(item, tam) {
+let total = 0;
+reserveLocations().forEach(loc => {
+const q = state.stock[loc] && state.stock[loc][item];
+if (q) total += (q[tam] || 0);
+});
+return total;
+}
+// Para um sabor+embalagem já zerados em Fábrica/Loja, lista os freezers de venda direta que
+// ainda têm esse item, com a quantidade — usado só para exibir o alerta, nunca altera estoque.
+function getVendaDiretaBreakdown(item, tam) {
+const result = [];
+vendaDiretaLocations().forEach(loc => {
+const q = state.stock[loc] && state.stock[loc][item];
+const qty = q ? (q[tam] || 0) : 0;
+if (qty > 0) result.push({ loc, qty });
+});
+return result;
+}
+const PACOTE_LABELS = { cx5L: 'Cx5L', pt2L: '2L', pt1L: '1L', pt750ml: '750ml' };
+// ============================================================================
+// REGRA CENTRAL — ÚNICA FONTE DE VERDADE sobre quais embalagens cada freezer
+// aceita, dada a categoria do sabor. NENHUMA tela deve ter lógica própria e
+// separada disso — Entrada, Saída, Transferência e os modais do Self Service
+// (Trocar sorvete / Ocupar posição) chamam sempre esta mesma função.
+//
+// Regra oficial (definida com o usuário em 2026):
+// 1. Freezers Estoque (Fábrica + Loja/FTV 03): TODAS as embalagens, TODAS as categorias.
+// 2. Self Service (A e B): SOMENTE Cx5L, qualquer categoria.
+// 3. Freezer vertical (vegano): SOMENTE potes — nunca Cx5L.
+//    - Sorbet (inclui "Choc Coc Veg", já categorizado como sorbet): 1L e 750ml (nunca 2L).
+//    - Açaí: 2L, 1L ou 750ml — é a ÚNICA categoria que usa 2L nesse freezer.
+//    - Nenhuma outra categoria (sorvete cremoso, s/a) pode ir para esse freezer.
+// 4. Freezer vertical (sorvetes): SOMENTE potes 1L e 750ml — nunca Cx5L, nunca 2L.
+//    - Categorias sorvete (cremoso) e s/a. Nenhuma outra categoria (sorbet, açaí) vai pra lá.
+// ============================================================================
+const ALL_PACKAGES = ['cx5L', 'pt2L', 'pt1L', 'pt750ml'];
+function embalagensPermitidas(freezer, categoria) {
+if (!freezer) return [];
+// Freezers Estoque (reserva): aceitam tudo, qualquer categoria.
+if (reserveLocations().includes(freezer)) return ALL_PACKAGES.slice();
+// Self Service A/B: só Cx5L, qualquer categoria.
+if (SELF_SERVICE_LOCATIONS.includes(freezer)) return ['cx5L'];
+// Freezer vertical (vegano): só potes; sorbet = 1L/750ml, açaí = 2L/1L/750ml, mais nada.
+if (freezer === 'Freezer vertical (vegano)') {
+if (categoria === 'sorbet') return ['pt1L', 'pt750ml'];
+if (categoria === 'acai') return ['pt2L', 'pt1L', 'pt750ml'];
+return [];
+}
+// Freezer vertical (sorvetes): só potes 1L/750ml; sorvete cremoso e s/a, mais nada.
+if (freezer === 'Freezer vertical (sorvetes)') {
+if (categoria === 'sorvete' || categoria === 's/a') return ['pt1L', 'pt750ml'];
+return [];
+}
+// Freezer não cadastrado nas regras acima: por segurança, nada é permitido.
+return [];
+}
+function embalagemPermitida(freezer, categoria, tam) {
+return embalagensPermitidas(freezer, categoria).includes(tam);
+}
+// Varredura do estoque atual: lista toda combinação freezer+sabor+embalagem com quantidade > 0
+// que viola a regra acima. Só relata — nunca apaga nem corrige nada sozinha.
+function auditFreezerPackageViolations() {
+const violations = [];
+Object.keys(state.stock || {}).forEach(freezer => {
+const itemsObj = state.stock[freezer] || {};
+Object.keys(itemsObj).forEach(item => {
+const q = itemsObj[item];
+if (!q) return;
+const categoria = getItemCategory(item);
+const allowed = embalagensPermitidas(freezer, categoria);
+ALL_PACKAGES.forEach(tam => {
+const qty = q[tam] || 0;
+if (qty > 0 && !allowed.includes(tam)) {
+violations.push({ freezer, item, categoria, tam, qty });
+}
+});
+});
+});
+return violations;
+}
+// PT2L só existe fisicamente para sabores de Sorbet e Açaí — nunca gerar o alerta pra essa
+// embalagem em outras categorias (Cremosos, S/A, etc.), já que ela nem é usada pra eles.
+function packageExistsForCategory(tam, cat) {
+if (tam === 'pt2L') return cat === 'sorbet' || cat === 'acai';
+return true;
+}
+// Selo "⚠️ só em Vendas" para uma célula do Resumo Geral: aparece quando a embalagem está
+// zerada em Fábrica/Loja (sem reserva nenhuma) mas ainda existe em algum freezer de venda
+// direta. Só informativo — não mexe em nenhum número nem gera movimentação.
+// Quantidade de uma embalagem que está especificamente no Self Service (A+B), usada pela regra
+// de exibição do alerta de Cx5L (triângulo maior sem número quando essa quantidade é exatamente 1).
+function getSelfServiceQty(item, tam) {
+let total = 0;
+SELF_SERVICE_LOCATIONS.forEach(loc => {
+const q = state.stock[loc] && state.stock[loc][item];
+if (q) total += (q[tam] || 0);
+});
+return total;
+}
+function reserveVendaAlertBadge(item, tam, cat, big) {
+if (!packageExistsForCategory(tam, cat)) return '';
+if (getReserveQty(item, tam) > 0) return '';
+const breakdown = getVendaDiretaBreakdown(item, tam);
+if (breakdown.length === 0) return '';
+const detailText = breakdown.map(b => `${b.loc}: ${b.qty}`).join(' · ');
+const msg = `Sem reserva em Fábrica/Loja de "${item}" — ${PACOTE_LABELS[tam]}. Só restando em: ${detailText}. Priorize a produção.`;
+const sizeClass = big ? ' reserve-venda-alert-big' : '';
+return ` <span class="reserve-venda-alert${sizeClass}" title="${escapeForInlineAttr(msg)}" onclick="event.stopPropagation(); showAlert('${escapeForInlineAttr(msg)}')">⚠️</span>`;
+}
+/* ---------- Lotes de estoque (fundação de dados) ----------
+Cada freezer+sabor+embalagem passa a guardar uma LISTA de lotes — cada lote é uma entrada
+específica (quantidade restante + data de fabricação + quando o lote foi criado), em vez de
+só um número agregado. Os campos agregados em state.stock (cx5L/pt2L/pt1L/pt750ml) continuam
+existindo e são o que toda a interface já lia antes — nada na tela muda nesta parte. Só que,
+a partir de agora, TODO ponto que mexe nesses números também espelha a mudança em state.lotes,
+pra soma dos lotes bater exatamente com o número agregado exibido em qualquer tela.
+Isso é só a fundação: a ORDEM de qual lote é consumido primeiro numa saída/transferência ainda
+não tem nenhuma lógica de FIFO por data (isso é a Parte 2) — aqui é só bookkeeping mecânico pra
+manter a soma consistente, sem nenhuma prioridade por validade/data de fabricação ainda. */
+function ensureLoteBucket(loc, item, tam) {
+if (!state.lotes || typeof state.lotes !== 'object') state.lotes = {};
+if (!state.lotes[loc] || typeof state.lotes[loc] !== 'object') state.lotes[loc] = {};
+if (!state.lotes[loc][item] || typeof state.lotes[loc][item] !== 'object') state.lotes[loc][item] = { cx5L: [], pt2L: [], pt1L: [], pt750ml: [] };
+// Corrige aqui mesmo qualquer valor que não seja um array de verdade (ex: um lote legado
+// gravado com formato incompatível) — sem isso, .find/.forEach/.sort quebram silenciosamente
+// mais adiante e a operação inteira (entrada/saída/transferência) pode parar no meio, antes de
+// salvar. Nunca perde quantidade real: o número que conta de fato é o campo agregado em
+// state.stock, que não depende dessa estrutura.
+if (!Array.isArray(state.lotes[loc][item][tam])) state.lotes[loc][item][tam] = [];
+return state.lotes[loc][item][tam];
+}
+// Soma dos lotes de um freezer+sabor+embalagem — deve sempre bater com state.stock[loc][item][tam].
+function getLoteSum(loc, item, tam) {
+const raw = state.lotes && state.lotes[loc] && state.lotes[loc][item] && state.lotes[loc][item][tam];
+const lotes = Array.isArray(raw) ? raw : [];
+return lotes.reduce((s, l) => s + ((l && l.quantidade) || 0), 0);
+}
+// Acrescenta quantidade a um lote existente com a MESMA data de fabricação (exata), ou cria um
+// lote novo se a data for diferente (ou se ainda não houver nenhum lote com essa data).
+function loteAdicionar(loc, item, tam, quantidade, producedOn) {
+if (!quantidade || quantidade <= 0) return;
+const lotes = ensureLoteBucket(loc, item, tam);
+const dateKey = producedOn || null;
+const existing = lotes.find(l => (l.producedOn || null) === dateKey);
+if (existing) {
+existing.quantidade += quantidade;
+} else {
+lotes.push({
+id: 'lote_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+quantidade,
+producedOn: dateKey,
+createdAt: new Date().toISOString()
+});
+}
+}
+// Remove uma quantidade dos lotes existentes (do primeiro lote da lista em diante, só pra manter
+// a soma correta — sem escolher por data/validade, isso é a Parte 2). Retorna o detalhamento do
+// que foi consumido (producedOn + quantidade de cada lote afetado), útil pra quem transfere
+// estoque entre freezers e quer preservar a data de fabricação no lote de destino.
+// Converte a data de fabricação de um lote (formatos aceitos: "dd/mm/aaaa" ou o legado "dd/mm",
+// sem ano) para um timestamp comparável, pra poder ordenar os lotes do mais antigo pro mais novo.
+// Datas no formato "dd/mm" (sem ano) assumem o ano corrente, ou o anterior se isso resultasse
+// numa data futura. Retorna null se não der pra interpretar a data.
+function parseProducedOnDate(str) {
+if (!str) return null;
+const m4 = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(str);
+if (m4) {
+const dd = parseInt(m4[1], 10), mm = parseInt(m4[2], 10), yyyy = parseInt(m4[3], 10);
+return new Date(yyyy, mm - 1, dd).getTime();
+}
+const m2 = /^(\d{2})\/(\d{2})$/.exec(str);
+if (m2) {
+const dd = parseInt(m2[1], 10), mm = parseInt(m2[2], 10);
+const now = new Date();
+let d = new Date(now.getFullYear(), mm - 1, dd);
+if (d.getTime() > now.getTime() + 86400000) d = new Date(now.getFullYear() - 1, mm - 1, dd);
+return d.getTime();
+}
+return null;
+}
+// Chave de ordenação FIFO de um lote: data de fabricação mais antiga primeiro. Lotes sem data
+// conhecida (producedOn null/inválido) são tratados como os MAIS ANTIGOS de todos — assim não
+// ficam acumulando indefinidamente sem serem consumidos por falta de informação de data.
+function loteSortKey(lote) {
+const t = parseProducedOnDate(lote.producedOn);
+return t === null ? -Infinity : t;
+}
+// Remove uma quantidade dos lotes existentes, sempre consumindo primeiro o lote com a data de
+// fabricação mais antiga (FIFO) — se esse lote não tiver o suficiente, continua no próximo mais
+// antigo, e assim por diante. Retorna o detalhamento do que foi consumido (producedOn +
+// quantidade de cada lote afetado), usado pela Transferência pra preservar a data no destino e
+// pelo Histórico pra registrar de qual(is) lote(s) a movimentação saiu.
+function loteRemover(loc, item, tam, quantidade) {
+if (!quantidade || quantidade <= 0) return [];
+const lotes = ensureLoteBucket(loc, item, tam);
+const ordenados = [...lotes].sort((a, b) => loteSortKey(a) - loteSortKey(b));
+let restante = quantidade;
+const consumido = [];
+for (let i = 0; i < ordenados.length && restante > 0; i++) {
+const l = ordenados[i];
+if (l.quantidade <= 0) continue;
+const usar = Math.min(l.quantidade, restante);
+l.quantidade -= usar;
+restante -= usar;
+consumido.push({ producedOn: l.producedOn, quantidade: usar });
+}
+for (let i = lotes.length - 1; i >= 0; i--) { if (lotes[i].quantidade <= 0) lotes.splice(i, 1); }
+return consumido;
+}
+// Variante usada só para desfazer uma entrada específica: tenta remover primeiro do lote com a
+// MESMA data de fabricação daquela entrada (o lote exato que ela criou/alimentou); se esse lote
+// não tiver quantidade suficiente, completa o restante nos demais lotes (ordem genérica, igual
+// loteRemover). Continua sem nenhuma lógica de priorização por validade — é só pra desfazer com
+// mais precisão a operação que sabemos exatamente qual foi.
+function loteRemoverExato(loc, item, tam, quantidade, producedOn) {
+if (!quantidade || quantidade <= 0) return [];
+const lotes = ensureLoteBucket(loc, item, tam);
+const dateKey = producedOn || null;
+const exato = lotes.find(l => (l.producedOn || null) === dateKey && l.quantidade > 0);
+if (exato && exato.quantidade >= quantidade) {
+exato.quantidade -= quantidade;
+if (exato.quantidade <= 0) {
+const idx = lotes.indexOf(exato);
+if (idx >= 0) lotes.splice(idx, 1);
+}
+return [{ producedOn: dateKey, quantidade }];
+}
+// Lote exato não existe ou não tem o suficiente: remove o que der dele e completa no resto.
+const consumido = [];
+let restante = quantidade;
+if (exato) {
+consumido.push({ producedOn: exato.producedOn, quantidade: exato.quantidade });
+restante -= exato.quantidade;
+exato.quantidade = 0;
+}
+if (restante > 0) consumido.push(...loteRemover(loc, item, tam, restante));
+for (let i = lotes.length - 1; i >= 0; i--) { if (lotes[i].quantidade <= 0) lotes.splice(i, 1); }
+return consumido;
+}
+// Remove uma quantidade de um lote ESPECÍFICO (por id) — usado quando o usuário escolhe
+// manualmente qual data/lote quer trazer numa transferência, ignorando a ordem do FIFO
+// automático (a escolha manual tem prioridade). Retorna null se o lote não existir mais ou não
+// tiver mais a quantidade pedida (ex: outra movimentação já consumiu ele nesse meio-tempo) —
+// quem chama deve avisar o usuário nesse caso, em vez de travar.
+function loteRemoverPorId(loc, item, tam, loteId, quantidade) {
+if (!loteId || !quantidade || quantidade <= 0) return null;
+const lotes = ensureLoteBucket(loc, item, tam);
+const lote = lotes.find(l => l.id === loteId);
+if (!lote || (lote.quantidade || 0) < quantidade) return null;
+lote.quantidade -= quantidade;
+const producedOn = lote.producedOn;
+if (lote.quantidade <= 0) {
+const idx = lotes.indexOf(lote);
+if (idx >= 0) lotes.splice(idx, 1);
+}
+return { producedOn, quantidade };
+}
+// Move todos os lotes de uma embalagem inteira de um freezer pro outro (usado na transferência
+// em lote, que já move 100% do sabor de uma vez — não precisa dividir quantidade por lote).
+function loteMoverTudo(fromLoc, toLoc, item, tam) {
+const srcLotes = ensureLoteBucket(fromLoc, item, tam);
+const destLotes = ensureLoteBucket(toLoc, item, tam);
+srcLotes.forEach(l => {
+const existing = destLotes.find(dl => (dl.producedOn || null) === (l.producedOn || null));
+if (existing) existing.quantidade += l.quantidade;
+else destLotes.push({ ...l });
+});
+srcLotes.length = 0;
+}
+// Todos os lotes (das 4 embalagens) de um sabor num freezer, cada um já com a embalagem anexada
+// (campo "tam") — usado pela aba Estoque pra decidir se mostra o detalhamento de lotes na linha
+// e pra montar a lista completa quando o usuário expande.
+function getAllLotesForItem(loc, item) {
+const packs = ['cx5L', 'pt2L', 'pt1L', 'pt750ml'];
+const all = [];
+packs.forEach(tam => {
+const raw = state.lotes && state.lotes[loc] && state.lotes[loc][item] && state.lotes[loc][item][tam];
+const lotes = Array.isArray(raw) ? raw : [];
+lotes.forEach(l => { if (l && (l.quantidade || 0) > 0) all.push({ ...l, tam }); });
+});
+return all;
+}
+// Último recurso quando o FIFO não encontrou nenhum lote de uma embalagem específica pra
+// consumir (dado legado incompleto, sem lote registrado): tenta achar a data mais antiga
+// conhecida entre QUALQUER lote desse sabor no freezer (não importa a embalagem); se nem isso
+// existir, cai pro campo de data agregado antigo; se nada existir, retorna null.
+function getOldestKnownProducedOn(loc, item) {
+const allLotes = getAllLotesForItem(loc, item);
+if (allLotes.length > 0) {
+const ordenado = [...allLotes].sort((a, b) => loteSortKey(a) - loteSortKey(b));
+return ordenado[0].producedOn;
+}
+const agregado = state.stock[loc] && state.stock[loc][item] && state.stock[loc][item].producedOn;
+return agregado || null;
+}
+// "Curativo" de integridade dos lotes — roda em TODO carregamento (não só na migração pontual),
+// igual ensureSelfServicePositions/ensureInsumosData. Corrige dois problemas sem nunca perder
+// quantidade real de estoque (o número que sempre manda é o campo agregado em state.stock):
+// 1) Garante que state.lotes[freezer][sabor][embalagem] seja sempre um array de verdade — cura
+//    qualquer estrutura parcial/incompatível que tenha ficado de uma versão anterior, que faria
+//    .find/.forEach/.sort quebrar silenciosamente no meio de uma Entrada/Saída/Transferência
+//    (a operação parava ANTES de salvar, dando a impressão de "a entrada não apareceu").
+// 2) Se a soma dos lotes de uma embalagem for menor que o total agregado (ex: um lote legado que
+//    nunca foi migrado, ou ficou perdido por causa do problema acima), cria um lote de reposição
+//    com a diferença, usando a data de fabricação já registrada no agregado — preserva a data
+//    original em vez de deixar essa quantidade "invisível" pros lotes.
+function ensureLotesIntegrity() {
+let changed = false;
+if (!state.lotes || typeof state.lotes !== 'object') { state.lotes = {}; changed = true; }
+Object.keys(state.stock || {}).forEach(loc => {
+if (!state.lotes[loc] || typeof state.lotes[loc] !== 'object') { state.lotes[loc] = {}; changed = true; }
+Object.keys(state.stock[loc]).forEach(item => {
+const entry = state.stock[loc][item];
+if (!state.lotes[loc][item] || typeof state.lotes[loc][item] !== 'object') { state.lotes[loc][item] = {}; changed = true; }
+['cx5L', 'pt2L', 'pt1L', 'pt750ml'].forEach(tam => {
+if (!Array.isArray(state.lotes[loc][item][tam])) { state.lotes[loc][item][tam] = []; changed = true; }
+const agregado = entry[tam] || 0;
+const somaLotes = state.lotes[loc][item][tam].reduce((s, l) => s + ((l && l.quantidade) || 0), 0);
+if (agregado > somaLotes) {
+const diferenca = agregado - somaLotes;
+state.lotes[loc][item][tam].push({
+id: 'lote_reposicao_' + loc.replace(/\s+/g, '_') + '_' + item.replace(/\s+/g, '_') + '_' + tam + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+quantidade: diferenca,
+producedOn: entry.producedOn || null,
+createdAt: new Date().toISOString()
+});
+changed = true;
+}
+});
+});
+});
+return changed;
+}
+// Verdadeiro se alguma embalagem específica desse sabor tiver mais de um lote (mais de uma data
+// de fabricação em estoque ao mesmo tempo) — é a condição que ativa o detalhamento expansível.
+function itemTemMultiplosLotes(loc, item) {
+return ['cx5L', 'pt2L', 'pt1L', 'pt750ml'].some(tam => {
+const raw = state.lotes && state.lotes[loc] && state.lotes[loc][item] && state.lotes[loc][item][tam];
+const lotes = Array.isArray(raw) ? raw : [];
+return lotes.filter(l => l && (l.quantidade || 0) > 0).length > 1;
+});
+}
+function loteExpandKey(freezer, item) { return freezer + '::' + item; }
+function toggleLoteExpand(freezer, item) {
+const key = loteExpandKey(freezer, item);
+if (expandedLoteItems.has(key)) expandedLoteItems.delete(key);
+else expandedLoteItems.add(key);
+renderStock();
+}
+const SELF_SERVICE_LOCATIONS = ['Self Service A', 'Self Service B'];
+const SELF_SERVICE_POSITIONS = 15; // 3 linhas x 5 colunas
+const SS_SITUACAO_OPTIONS = ['Cheio', 'Metade', 'Abaixo Metade', 'Quase Fim', 'Fim'];
+// Escala do mais tranquilo (verde) ao mais crítico (vermelho escuro), igual à planilha de referência.
+// Cor sólida por situação — o texto (branco/preto) é escolhido automaticamente pelo contraste, ver getContrastTextColor().
+const SS_SITUACAO_COLORS = {
+'Cheio': '#2E7D32',
+'Metade': '#FBC02D',
+'Abaixo Metade': '#EF6C00',
+'Quase Fim': '#C62828',
+'Fim': '#4A1414'
+};
+function getContrastTextColor(hex) {
+if (!hex) return '#000000';
+const clean = hex.replace('#', '');
+const r = parseInt(clean.substring(0, 2), 16);
+const g = parseInt(clean.substring(2, 4), 16);
+const b = parseInt(clean.substring(4, 6), 16);
+const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+return luminance > 0.55 ? '#1A1A1A' : '#FFFFFF';
+}
+function emptySelfServicePosition() {
+return { item: null, producedOn: null, openedOn: null, situacao: null, producaoNecessaria: null, faltaInsumoManual: false };
+}
+function ensureSelfServicePositions() {
+let changed = false;
+if (!state.selfServicePositions) { state.selfServicePositions = {}; changed = true; }
+if (!Array.isArray(state.selfServiceGiroHistory)) { state.selfServiceGiroHistory = []; changed = true; }
+SELF_SERVICE_LOCATIONS.forEach(loc => {
+if (!Array.isArray(state.selfServicePositions[loc]) || state.selfServicePositions[loc].length !== SELF_SERVICE_POSITIONS) {
+const existing = Array.isArray(state.selfServicePositions[loc]) ? state.selfServicePositions[loc] : [];
+const arr = [];
+for (let i = 0; i < SELF_SERVICE_POSITIONS; i++) arr.push(existing[i] || emptySelfServicePosition());
+state.selfServicePositions[loc] = arr;
+changed = true;
+}
+// Backfill de campos novos em posições já existentes
+state.selfServicePositions[loc].forEach(pos => {
+if (pos && pos.situacao === undefined) { pos.situacao = null; changed = true; }
+if (pos && pos.producaoNecessaria === undefined) { pos.producaoNecessaria = null; changed = true; }
+if (pos && pos.faltaInsumoManual === undefined) { pos.faltaInsumoManual = false; changed = true; }
+});
+});
+return changed;
+}
+function parseProducaoNecessaria(str) {
+if (!str) return null;
+const parts = str.split('/').map(p => p.trim());
+if (parts.length !== 4) return null;
+const nums = parts.map(p => { const n = parseInt(p, 10); return isNaN(n) || n < 0 ? 0 : n; });
+if (nums.every(n => n === 0)) return null;
+return { cx5L: nums[0], pt2L: nums[1], pt1L: nums[2], pt750ml: nums[3] };
+}
+function formatProducaoNecessaria(p) {
+if (!p) return '';
+return `${p.cx5L || 0}/${p.pt2L || 0}/${p.pt1L || 0}/${p.pt750ml || 0}`;
+}
+// Ficha sabor -> insumos, e status manual de "em falta" por insumo.
+// Provisório enquanto o dashboard de insumos congelados roda como app separado;
+// quando os dois apps forem unificados, isso pode ser substituído por leitura direta do estoque real de insumos.
+function ensureInsumosData() {
+let changed = false;
+if (!state.itemInsumos) { state.itemInsumos = {}; changed = true; }
+if (!state.insumoFaltando) { state.insumoFaltando = {}; changed = true; }
+if (state.insumosImportados === undefined) { state.insumosImportados = null; changed = true; }
+return changed;
+}
+function getInsumoFaltaAuto(item) {
+if (!item) return false;
+ensureInsumosData();
+const list = state.itemInsumos[item] || [];
+return list.some(ins => !!state.insumoFaltando[ins]);
+}
+/* ---------- Importação do estoque de insumos (Dashboard de Insumos Congelados) e cruzamento por nome ---------- */
+function normalizeInsumoName(s) {
+return (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+function escapeForInlineAttr(s) {
+return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+function triggerInsumosImport() {
+document.getElementById('insumos-import-file-input').click();
+}
+async function onInsumosImportFileSelected(event) {
+const file = event.target.files[0];
+event.target.value = '';
+if (!file) return;
+try {
+const text = await file.text();
+const parsed = JSON.parse(text);
+const itens = parsed && parsed.dados && Array.isArray(parsed.dados.itens) ? parsed.dados.itens : null;
+if (!itens) {
+showToast('Arquivo não reconhecido — confirme que é o JSON exportado do Dashboard de Insumos.');
+return;
+}
+ensureInsumosData();
+state.insumosImportados = {
+importedAt: new Date().toISOString(),
+itens: itens.map(i => ({ nome: i.nome, kg: i.kg, rend: (i.rend !== undefined ? i.rend : null) })),
+origemVersao: parsed.versao || null,
+origemExportadoEm: parsed.exportadoEm || null
+};
+await saveData();
+renderStock();
+renderRelatorios();
+showToast('Estoque de insumos importado (' + itens.length + ' itens).');
+} catch (e) {
+console.error(e);
+showToast('Erro ao ler o arquivo. Confirme que é o JSON exportado do Dashboard de Insumos.');
+}
+}
+function matchImportedInsumosForItem(saborName) {
+ensureInsumosData();
+if (!state.insumosImportados || !Array.isArray(state.insumosImportados.itens)) return [];
+const saborNorm = normalizeInsumoName(saborName);
+if (!saborNorm) return [];
+return state.insumosImportados.itens.filter(ins => {
+const insNorm = normalizeInsumoName(ins.nome);
+if (!insNorm) return false;
+return saborNorm.includes(insNorm) || insNorm.includes(saborNorm);
+});
+}
+function computeInsumoSituacaoImportado(ins) {
+const kg = Number(ins.kg) || 0;
+const rend = (ins.rend !== undefined && ins.rend !== null && ins.rend !== '') ? Number(ins.rend) : null;
+if (rend && rend > 0) {
+const caixas = kg / rend;
+if (caixas < 1) return { nivel: 'vermelho', caixas: Math.floor(caixas) };
+if (caixas < 3) return { nivel: 'amarelo', caixas: Math.floor(caixas) };
+return { nivel: 'verde', caixas: Math.floor(caixas) };
+}
+if (kg === 0) return { nivel: 'vermelho', kg };
+if (kg < 2) return { nivel: 'amarelo', kg };
+return { nivel: 'verde', kg };
+}
+function getInsumoImportAlertas(saborName) {
+const matches = matchImportedInsumosForItem(saborName);
+const alertas = [];
+matches.forEach(ins => {
+const sit = computeInsumoSituacaoImportado(ins);
+if (sit.nivel === 'vermelho' || sit.nivel === 'amarelo') alertas.push(Object.assign({ nome: ins.nome }, sit));
+});
+return alertas;
+}
+function openInsumosConfigModal() {
+ensureInsumosData();
+const allItems = new Set();
+Object.keys(state.itemCategories || {}).forEach(i => allItems.add(i));
+Object.values(state.stock).forEach(loc => Object.keys(loc).forEach(i => allItems.add(i)));
+const itemsSorted = [...allItems].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+let fichaHtml = '';
+itemsSorted.forEach(item => {
+const meta = CATEGORY_META[getItemCategory(item)];
+const current = (state.itemInsumos[item] || []).join(', ');
+fichaHtml += `<div style="padding:6px 0; border-bottom:1px solid var(--border);">
+<div style="font-size:12.5px; font-weight:600; margin-bottom:3px;"><span class="cat-dot" style="background:${meta.color}"></span>${escapeHTML(item)}</div>
+<input type="text" class="insumos-ficha-input" data-item="${escapeAttr(item)}" placeholder="insumos separados por vírgula" value="${escapeAttr(current)}" style="width:100%; padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;">
+</div>`;
+});
+document.getElementById('insumos-ficha-list').innerHTML = fichaHtml;
+const insumoSet = new Set();
+Object.values(state.itemInsumos).forEach(arr => (arr || []).forEach(i => insumoSet.add(i)));
+const insumosSorted = [...insumoSet].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+let statusHtml = '';
+if (insumosSorted.length === 0) {
+statusHtml = `<div class="hint">Nenhum insumo cadastrado ainda — preencha as fichas acima, clique em "Salvar" e reabra este painel para marcar o status de cada um.</div>`;
+} else {
+insumosSorted.forEach(ins => {
+const checked = !!state.insumoFaltando[ins];
+statusHtml += `<label style="display:flex; align-items:center; gap:6px; padding:4px 0; font-size:12.5px;">
+<input type="checkbox" class="insumo-status-check" data-insumo="${escapeAttr(ins)}" ${checked ? 'checked' : ''}>
+${escapeHTML(ins)}
+</label>`;
+});
+}
+document.getElementById('insumos-status-list').innerHTML = statusHtml;
+document.getElementById('modal-insumos-config').classList.add('open');
+}
+async function confirmInsumosConfig() {
+ensureInsumosData();
+document.querySelectorAll('.insumos-ficha-input').forEach(input => {
+const item = input.dataset.item;
+const list = input.value.split(',').map(s => s.trim()).filter(Boolean);
+if (list.length === 0) delete state.itemInsumos[item];
+else state.itemInsumos[item] = list;
+});
+document.querySelectorAll('.insumo-status-check').forEach(chk => {
+const ins = chk.dataset.insumo;
+state.insumoFaltando[ins] = chk.checked;
+});
+await saveData();
+renderStock();
+renderRelatorios();
+closeModal('modal-insumos-config');
+showToast('Insumos por sabor salvos.');
+}
+let ssSwapModeActive = false; // reorganização ligada/desligada para os dois freezers Self Service ao mesmo tempo
+let ssSwapSelected = null; // { loc, idx } aguardando o segundo toque (pode ser em qualquer um dos dois freezers)
+let ssRepoModeActive = false; // "Marcar reposição" ligado/desligado para os dois freezers Self Service ao mesmo tempo (independente de Trocar sorvete/produção necessária)
+const FREEZER_DESC = {
+'FTV 01': 'Fricon tampa de vidro 01',
+'HDE 503': 'Fricon',
+'MTC 01': 'Metalfrio tampa cega 01',
+'FTV 02': 'Fricon tampa de vidro 02',
+'MTV 01': 'Metalfrio tampa de vidro 01',
+'GTV 01': 'Gelopar tampa de vidro 01'
+};
+function allLocationsOrdered() {
+const known = LOCATION_GROUPS.flatMap(g => g.locations);
+const extra = state.stock ? Object.keys(state.stock).filter(l => !known.includes(l)) : [];
+return [...known, ...extra];
+}
+let state = null;
+let selectFreezer = null;
+let selectedItems = new Set();
+let bulkOrigem = null;
+let reposicaoMarcarMode = false;
+// Linhas da aba Estoque com o detalhamento de lotes (datas de fabricação) expandido — chave "freezer::sabor".
+let expandedLoteItems = new Set();
+function defaultState() {
+return {
+stock: {
+"FTV 01": {},
+"HDE 503": {
+"Chocb s/a": { cx5L: 0, pt2L: 0, pt1L: 4, pt750ml: 0 },
+"CFV s/a": { cx5L: 0, pt2L: 0, pt1L: 2, pt750ml: 0 },
+"Nut s/a": { cx5L: 0, pt2L: 0, pt1L: 3, pt750ml: 0 },
+"Sb. Amora": { cx5L: 0, pt2L: 0, pt1L: 3, pt750ml: 0 },
+"Sb. Graviola": { cx5L: 0, pt2L: 0, pt1L: 3, pt750ml: 3 },
+"Sb. Caju": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 3 },
+"Sb. Maracujá": { cx5L: 0, pt2L: 0, pt1L: 3, pt750ml: 3 },
+"Choc Coc": { cx5L: 0, pt2L: 0, pt1L: 4, pt750ml: 0 },
+"Chocb": { cx5L: 0, pt2L: 0, pt1L: 6, pt750ml: 0 },
+"Banana Flamb": { cx5L: 0, pt2L: 0, pt1L: 4, pt750ml: 0 },
+"PV": { cx5L: 0, pt2L: 0, pt1L: 2, pt750ml: 0 },
+"abacaxi": { cx5L: 0, pt2L: 0, pt1L: 2, pt750ml: 0 }
+},
+"MTC 01": {
+"Chocb": { cx5L: 3, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Caramel": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Doce de Leite": { cx5L: 2, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' }
+},
+"FTV 02": {
+"Açaí Selv": { cx5L: 0, pt2L: 0, pt1L: 14, pt750ml: 0 },
+"Paçoca": { cx5L: 3, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '23/07' },
+"PV": { cx5L: 2, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Sb. Amora": { cx5L: 3, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Choc Coc Veg": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '21/07' },
+"Chocomenta": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Chocb s/a": { cx5L: 2, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '23/07' },
+"Creme": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '22/07' },
+"Floc": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Nut s/a": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '23/07' },
+"Nutella": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Sb. Maracujá": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' }
+},
+"MTV 01": {
+"Sb. Amora": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 1 },
+"Creme": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 1 },
+"PV": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 5 },
+"Caram Flor": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 3 },
+"Sb. Laranja": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 1 },
+"Chocomenta": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 0 },
+"Chocb": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 1 },
+"Raf": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 1 },
+"Floc": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 1 },
+"Doce de Leite": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 2 },
+"Paçoca": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 1 },
+"Açaí Trad": { cx5L: 0, pt2L: 3, pt1L: 8, pt750ml: 0 }
+},
+"GTV 01": {},
+"FTV 03": {
+"Açaí Selv": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '26/06' },
+"Creme": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '22/07' },
+"Nutella": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Morango": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Choc Caram": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '13/07' },
+"Sb. Amora": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Nut s/a": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '23/07' }
+},
+"Freezer vertical (vegano)": {
+"Sb. Caju": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 0 },
+"Sb. Maracujá": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 1 }
+},
+"Freezer vertical (sorvetes)": {
+"Chocb s/a": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 0 },
+"CFV s/a": { cx5L: 0, pt2L: 0, pt1L: 4, pt750ml: 0 },
+"Nut s/a": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 0 }
+},
+"Self Service A": {},
+"Self Service B": {}
+},
+itemCategories: { ...DEFAULT_CATEGORIES },
+reposicao: {},
+selfServicePositions: {
+'Self Service A': Array.from({ length: SELF_SERVICE_POSITIONS }, emptySelfServicePosition),
+'Self Service B': Array.from({ length: SELF_SERVICE_POSITIONS }, emptySelfServicePosition)
+},
+dataVersion: 8,
+history: []
+};
+}
+async function loadData() {
+try {
+const raw = await storageLayer.get(STORAGE_KEY);
+if (raw) {
+try {
+state = JSON.parse(raw);
+} catch (parseErr) {
+console.error('Dados corrompidos ao carregar:', parseErr);
+showLoadError();
+return;
+}
+} else {
+// Nenhum dado existe ainda — primeira execução genuína.
+state = defaultState();
+await saveData();
+}
+} catch (e) {
+console.error('Erro ao carregar dados:', e);
+showLoadError();
+return;
+}
+hideLoadError();
+await migrateState();
+renderAll();
+updateLastUpdatedDisplay();
+setupRealtimeSync();
+checkEmbalagemAuditOnLoad();
+}
+function showLoadError() {
+const el = document.getElementById('load-error-screen');
+if (el) el.style.display = 'flex';
+clearTimeout(window._loadRetryTimer);
+window._loadRetryTimer = setTimeout(() => loadData(), 6000);
+}
+function hideLoadError() {
+const el = document.getElementById('load-error-screen');
+if (el) el.style.display = 'none';
+clearTimeout(window._loadRetryTimer);
+}
+let applyingRemoteUpdate = false;
+function setupRealtimeSync() {
+storageLayer.onRemoteChange(STORAGE_KEY, (raw) => {
+// Ignora o próprio eco de quando este dispositivo acabou de salvar
+if (JSON.stringify(state) === (typeof raw === 'string' ? raw : JSON.stringify(raw))) return;
+applyingRemoteUpdate = true;
+try {
+state = typeof raw === 'string' ? JSON.parse(raw) : raw;
+const onHistorico = document.getElementById('tab-historico').classList.contains('active');
+const onReposicao = document.getElementById('tab-reposicao').classList.contains('active');
+const onRelatorios = document.getElementById('tab-relatorios').classList.contains('active');
+populateFilterFreezer();
+if (onHistorico) renderHistory(); else if (onReposicao) renderReposicao(); else if (onRelatorios) renderRelatorios(); else renderStock();
+updateLastUpdatedDisplay();
+} catch (e) {
+console.error('Erro ao aplicar atualização remota:', e);
+}
+applyingRemoteUpdate = false;
+});
+}
+async function migrateState() {
+let changed = false;
+if (!state.dataVersion || state.dataVersion < 2) {
+if (!state.stock['Loja']) state.stock['Loja'] = {};
+if (!state.stock['Vendas']) state.stock['Vendas'] = {};
+state.stock['HDE 503'] = {
+"Chocb s/a": { cx5L: 0, pt2L: 0, pt1L: 4, pt750ml: 0 },
+"CFV s/a": { cx5L: 0, pt2L: 0, pt1L: 2, pt750ml: 0 },
+"Nut s/a": { cx5L: 0, pt2L: 0, pt1L: 3, pt750ml: 0 },
+"Sb. Amora": { cx5L: 0, pt2L: 0, pt1L: 3, pt750ml: 0 },
+"Sb. Graviola": { cx5L: 0, pt2L: 0, pt1L: 3, pt750ml: 3 },
+"Sb. Caju": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 3 },
+"Sb. Maracujá": { cx5L: 0, pt2L: 0, pt1L: 3, pt750ml: 3 },
+"Choc Coc": { cx5L: 0, pt2L: 0, pt1L: 4, pt750ml: 0 },
+"Chocb": { cx5L: 0, pt2L: 0, pt1L: 6, pt750ml: 0 },
+"Banana Flamb": { cx5L: 0, pt2L: 0, pt1L: 4, pt750ml: 0 },
+"PV": { cx5L: 0, pt2L: 0, pt1L: 2, pt750ml: 0 },
+"abacaxi": { cx5L: 0, pt2L: 0, pt1L: 2, pt750ml: 0 }
+};
+state.stock['Vendas'] = {
+"Chocb s/a": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 0 },
+"CFV s/a": { cx5L: 0, pt2L: 0, pt1L: 4, pt750ml: 0 },
+"Nut s/a": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 0 },
+"Sb. Caju": { cx5L: 0, pt2L: 0, pt1L: 1, pt750ml: 0 },
+"Sb. Maracujá": { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 1 }
+};
+state.dataVersion = 2;
+changed = true;
+}
+if (!state.dataVersion || state.dataVersion < 3) {
+// Rename TV02 -> MTV 01 (merge if both somehow exist)
+if (state.stock['TV02']) {
+if (!state.stock['MTV 01']) state.stock['MTV 01'] = {};
+Object.keys(state.stock['TV02']).forEach(item => {
+if (!state.stock['MTV 01'][item]) state.stock['MTV 01'][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock['MTV 01'][item].pt1L += state.stock['TV02'][item].pt1L;
+state.stock['MTV 01'][item].pt750ml += state.stock['TV02'][item].pt750ml;
+});
+delete state.stock['TV02'];
+}
+if (!state.stock['MTV 01']) state.stock['MTV 01'] = {};
+// Rename Loja -> FTV 03 (merge if both somehow exist)
+if (state.stock['Loja']) {
+if (!state.stock['FTV 03']) state.stock['FTV 03'] = {};
+Object.keys(state.stock['Loja']).forEach(item => {
+if (!state.stock['FTV 03'][item]) state.stock['FTV 03'][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock['FTV 03'][item].pt1L += state.stock['Loja'][item].pt1L;
+state.stock['FTV 03'][item].pt750ml += state.stock['Loja'][item].pt750ml;
+});
+delete state.stock['Loja'];
+}
+if (!state.stock['FTV 03']) state.stock['FTV 03'] = {};
+// New empty freezers at the factory
+['FTV 01', 'MTC 01', 'FTV 02', 'GTV 01'].forEach(f => { if (!state.stock[f]) state.stock[f] = {}; });
+// Split Vendas into the two new point-of-sale freezers
+const vendasSplit = {
+'Sb. Caju': 'Freezer vertical (vegano)',
+'Sb. Maracujá': 'Freezer vertical (vegano)',
+'CFV s/a': 'Freezer vertical (sorvetes)',
+'Chocb s/a': 'Freezer vertical (sorvetes)',
+'Nut s/a': 'Freezer vertical (sorvetes)'
+};
+if (!state.stock['Freezer vertical (vegano)']) state.stock['Freezer vertical (vegano)'] = {};
+if (!state.stock['Freezer vertical (sorvetes)']) state.stock['Freezer vertical (sorvetes)'] = {};
+if (state.stock['Vendas']) {
+Object.keys(state.stock['Vendas']).forEach(item => {
+const dest = vendasSplit[item] || 'Freezer vertical (sorvetes)';
+if (!state.stock[dest][item]) state.stock[dest][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock[dest][item].pt1L += state.stock['Vendas'][item].pt1L;
+state.stock[dest][item].pt750ml += state.stock['Vendas'][item].pt750ml;
+});
+delete state.stock['Vendas'];
+}
+// Keep history consistent with the renamed/split locations
+const renameMap = { 'TV02': 'MTV 01', 'Loja': 'FTV 03' };
+(state.history || []).forEach(e => {
+if (renameMap[e.freezer]) e.freezer = renameMap[e.freezer];
+if (e.destino && renameMap[e.destino]) e.destino = renameMap[e.destino];
+if (e.freezer === 'Vendas') e.freezer = vendasSplit[e.item] || 'Freezer vertical (sorvetes)';
+if (e.destino === 'Vendas') e.destino = vendasSplit[e.item] || 'Freezer vertical (sorvetes)';
+});
+state.dataVersion = 3;
+changed = true;
+}
+if (!state.dataVersion || state.dataVersion < 4) {
+// Ensure every existing stock item has a pt2L field
+Object.values(state.stock).forEach(loc => {
+Object.keys(loc).forEach(item => {
+if (loc[item].pt2L === undefined) loc[item].pt2L = 0;
+});
+});
+// New açaí flavors reported by the user
+if (!state.stock['FTV 02']) state.stock['FTV 02'] = {};
+if (!state.stock['FTV 02']['Açaí Selv']) {
+state.stock['FTV 02']['Açaí Selv'] = { cx5L: 0, pt2L: 0, pt1L: 14, pt750ml: 0 };
+}
+if (!state.stock['MTV 01']) state.stock['MTV 01'] = {};
+if (!state.stock['MTV 01']['Açaí Trad']) {
+state.stock['MTV 01']['Açaí Trad'] = { cx5L: 0, pt2L: 3, pt1L: 8, pt750ml: 0 };
+}
+if (!state.itemCategories) state.itemCategories = {};
+if (!state.itemCategories['Açaí Selv']) state.itemCategories['Açaí Selv'] = 'acai';
+if (!state.itemCategories['Açaí Trad']) state.itemCategories['Açaí Trad'] = 'acai';
+state.dataVersion = 4;
+changed = true;
+}
+if (!state.dataVersion || state.dataVersion < 5) {
+// Ensure every existing stock item has a cx5L field
+Object.values(state.stock).forEach(loc => {
+Object.keys(loc).forEach(item => {
+if (loc[item].cx5L === undefined) loc[item].cx5L = 0;
+});
+});
+// FTV 03 flavors reported by the user, with production dates
+if (!state.stock['FTV 03']) state.stock['FTV 03'] = {};
+const ftv03Items = {
+"Açaí Selv": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '26/06' },
+"Creme": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '22/07' },
+"Nutella": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Morango": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Choc Caram": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '13/07' },
+"Sb. Amora": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Nut s/a": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '23/07' }
+};
+Object.keys(ftv03Items).forEach(item => {
+if (!state.stock['FTV 03'][item]) state.stock['FTV 03'][item] = ftv03Items[item];
+});
+if (!state.itemCategories) state.itemCategories = {};
+['Nutella', 'Morango', 'Choc Caram'].forEach(i => {
+if (!state.itemCategories[i]) state.itemCategories[i] = 'sorvete';
+});
+state.dataVersion = 5;
+changed = true;
+}
+if (!state.dataVersion || state.dataVersion < 6) {
+if (!state.stock['MTC 01']) state.stock['MTC 01'] = {};
+const mtc01Items = {
+"Chocb": { cx5L: 3, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Caramel": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Doce de Leite": { cx5L: 2, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' }
+};
+Object.keys(mtc01Items).forEach(item => {
+if (!state.stock['MTC 01'][item]) state.stock['MTC 01'][item] = mtc01Items[item];
+});
+if (!state.stock['FTV 02']) state.stock['FTV 02'] = {};
+const ftv02Items = {
+"Paçoca": { cx5L: 3, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '23/07' },
+"PV": { cx5L: 2, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Sb. Amora": { cx5L: 3, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Choc Coc Veg": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '21/07' },
+"Chocomenta": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' },
+"Chocb s/a": { cx5L: 2, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '23/07' },
+"Creme": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '22/07' },
+"Floc": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Nut s/a": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '23/07' },
+"Nutella": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '20/07' },
+"Sb. Maracujá": { cx5L: 1, pt2L: 0, pt1L: 0, pt750ml: 0, producedOn: '24/07' }
+};
+Object.keys(ftv02Items).forEach(item => {
+if (!state.stock['FTV 02'][item]) state.stock['FTV 02'][item] = ftv02Items[item];
+});
+if (!state.itemCategories) state.itemCategories = {};
+if (!state.itemCategories['Choc Coc Veg']) state.itemCategories['Choc Coc Veg'] = 'sorbet';
+if (!state.itemCategories['Caramel']) state.itemCategories['Caramel'] = 'sorvete';
+state.dataVersion = 6;
+changed = true;
+}
+if (!state.dataVersion || state.dataVersion < 7) {
+// "Choc S/A" turned out to be the same flavor as "Chocb s/a" — merge it in
+Object.keys(state.stock).forEach(loc => {
+if (state.stock[loc]['Choc S/A']) {
+const old = state.stock[loc]['Choc S/A'];
+if (!state.stock[loc]['Chocb s/a']) {
+state.stock[loc]['Chocb s/a'] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+}
+['cx5L', 'pt2L', 'pt1L', 'pt750ml'].forEach(size => {
+state.stock[loc]['Chocb s/a'][size] = (state.stock[loc]['Chocb s/a'][size] || 0) + (old[size] || 0);
+});
+if (old.producedOn) state.stock[loc]['Chocb s/a'].producedOn = old.producedOn;
+delete state.stock[loc]['Choc S/A'];
+}
+});
+(state.history || []).forEach(e => {
+if (e.item === 'Choc S/A') e.item = 'Chocb s/a';
+});
+if (state.itemCategories) delete state.itemCategories['Choc S/A'];
+state.dataVersion = 7;
+changed = true;
+}
+if (!state.dataVersion || state.dataVersion < 8) {
+// Novo grupo "Self Service" (freezers A e B) + grade de posições
+SELF_SERVICE_LOCATIONS.forEach(loc => { if (!state.stock[loc]) state.stock[loc] = {}; });
+state.dataVersion = 8;
+changed = true;
+}
+if (!state.dataVersion || state.dataVersion < 9) {
+// Nova arquitetura de estoque por "lote": cada combinação atual de freezer+sabor+embalagem
+// (com a data de fabricação que já estava registrada) vira um lote único, preservando a
+// quantidade de hoje. Os campos agregados em state.stock continuam existindo e sendo a
+// fonte que toda a tela lê — nada muda visualmente aqui. A partir de agora, os pontos que
+// mexem em estoque também atualizam state.lotes, pra soma dos lotes bater com o agregado.
+if (!state.lotes) state.lotes = {};
+Object.keys(state.stock).forEach(loc => {
+if (!state.lotes[loc]) state.lotes[loc] = {};
+Object.keys(state.stock[loc]).forEach(item => {
+const entry = state.stock[loc][item];
+if (!state.lotes[loc][item]) state.lotes[loc][item] = { cx5L: [], pt2L: [], pt1L: [], pt750ml: [] };
+['cx5L', 'pt2L', 'pt1L', 'pt750ml'].forEach(tam => {
+if (!Array.isArray(state.lotes[loc][item][tam])) state.lotes[loc][item][tam] = [];
+const qty = entry[tam] || 0;
+if (qty > 0 && state.lotes[loc][item][tam].length === 0) {
+state.lotes[loc][item][tam].push({
+id: 'lote_migracao_' + loc.replace(/\s+/g, '_') + '_' + item.replace(/\s+/g, '_') + '_' + tam,
+quantidade: qty,
+producedOn: entry.producedOn || null,
+createdAt: new Date().toISOString()
+});
+}
+});
+});
+});
+state.dataVersion = 9;
+changed = true;
+}
+if (ensureSelfServicePositions()) changed = true;
+if (ensureInsumosData()) changed = true;
+if (ensureLotesIntegrity()) changed = true;
+if (!state.itemCategories) { state.itemCategories = {}; changed = true; }
+Object.keys(DEFAULT_CATEGORIES).forEach(k => {
+if (!(k in state.itemCategories)) { state.itemCategories[k] = DEFAULT_CATEGORIES[k]; changed = true; }
+});
+Object.values(state.stock).forEach(loc => {
+Object.keys(loc).forEach(item => {
+if (!(item in state.itemCategories)) { state.itemCategories[item] = 'sorvete'; changed = true; }
+});
+});
+if (!state.reposicao) { state.reposicao = {}; changed = true; }
+if (!state.lotes) { state.lotes = {}; changed = true; }
+if (changed) await saveData();
+}
+async function saveData() {
+try {
+state.lastUpdated = new Date().toISOString();
+await storageLayer.set(STORAGE_KEY, JSON.stringify(state));
+setConnBanner(false);
+updateLastUpdatedDisplay();
+return true;
+} catch (e) {
+setConnBanner(true);
+showToast('Erro ao salvar. Tente novamente.');
+console.error(e);
+return false;
+}
+}
+function setConnBanner(broken) {
+const b = document.getElementById('conn-banner');
+if (b) b.classList.toggle('show', !!broken);
+}
+function updateLastUpdatedDisplay() {
+const el = document.getElementById('last-updated');
+if (!el) return;
+if (state.lastUpdated) {
+const d = new Date(state.lastUpdated);
+const isRecent = (Date.now() - d.getTime()) <= 2 * 60 * 1000;
+el.className = 'sync-badge ' + (isRecent ? 'ok' : 'stale');
+const icon = isRecent ? '☁' : '⏱';
+el.textContent = icon + ' Última atualização: ' + d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+} else {
+el.className = 'sync-badge';
+el.textContent = '';
+}
+}
+function showToast(msg) {
+const t = document.getElementById('toast');
+t.textContent = msg;
+t.classList.add('show');
+setTimeout(() => t.classList.remove('show'), 2200);
+}
+function switchTab(tab) {
+document.getElementById('tab-estoque').classList.toggle('active', tab === 'estoque');
+document.getElementById('tab-historico').classList.toggle('active', tab === 'historico');
+document.getElementById('tab-reposicao').classList.toggle('active', tab === 'reposicao');
+document.getElementById('tab-relatorios').classList.toggle('active', tab === 'relatorios');
+document.getElementById('view-estoque').style.display = tab === 'estoque' ? '' : 'none';
+document.getElementById('view-historico').style.display = tab === 'historico' ? '' : 'none';
+document.getElementById('view-reposicao').style.display = tab === 'reposicao' ? '' : 'none';
+document.getElementById('view-relatorios').style.display = tab === 'relatorios' ? '' : 'none';
+if (tab === 'historico') renderHistory();
+if (tab === 'reposicao') renderReposicao();
+if (tab === 'relatorios') renderRelatorios();
+}
+function goToFreezerCard(freezer) {
+switchTab('estoque');
+requestAnimationFrame(() => {
+const cards = document.querySelectorAll('[data-freezer-card]');
+const target = Array.from(cards).find(el => el.dataset.freezerCard === freezer);
+if (!target) return;
+target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+target.classList.add('card-jump-highlight');
+setTimeout(() => target.classList.remove('card-jump-highlight'), 1600);
+});
+}
+function goToSelfServicePanel() {
+switchTab('estoque');
+requestAnimationFrame(() => {
+const target = document.getElementById('selfservice-panel');
+if (!target) return;
+target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+target.classList.add('card-jump-highlight');
+setTimeout(() => target.classList.remove('card-jump-highlight'), 1600);
+});
+}
+function renderAll() {
+renderStock();
+populateFilterFreezer();
+renderHistory();
+renderReposicao();
+renderRelatorios();
+}
+const SUMMARY_EXCLUDED_LOCATIONS = ['Freezer vertical (vegano)', 'Freezer vertical (sorvetes)'];
+const DEFAULT_LOW_STOCK_THRESHOLD = 2;
+let oosExpanded = false;
+function computeSummary() {
+const totals = {}; // item -> {pt1L, pt750ml, locations: Set, inSelfService: bool}
+Object.keys(state.stock).forEach(loc => {
+if (SUMMARY_EXCLUDED_LOCATIONS.includes(loc)) return;
+Object.keys(state.stock[loc]).forEach(item => {
+const q = state.stock[loc][item];
+if (!totals[item]) totals[item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0, locations: new Set(), inSelfService: false };
+totals[item].cx5L += q.cx5L || 0;
+totals[item].pt2L += q.pt2L || 0;
+totals[item].pt1L += q.pt1L || 0;
+totals[item].pt750ml += q.pt750ml || 0;
+if ((q.cx5L || 0) > 0 || (q.pt2L || 0) > 0 || (q.pt1L || 0) > 0 || (q.pt750ml || 0) > 0) {
+// Self Service segue contando no total (correto — é estoque real), mas não tem mais card
+// tradicional para "saltar" na aba Estoque. Antes isso ficava totalmente omitido do "Onde",
+// dando a impressão de que todo o total pertencia só aos freezers listados ali (BUG:
+// Resumo Geral parecia divergir do card do freezer quando, na verdade, parte do total
+// estava numa posição do Self Service). Agora marcamos essa presença à parte para o
+// "Onde" deixar isso explícito em vez de escondido.
+if (!SELF_SERVICE_LOCATIONS.includes(loc)) totals[item].locations.add(loc);
+else totals[item].inSelfService = true;
+}
+});
+});
+return totals;
+}
+function getLowStockThreshold(item) {
+if (state.lowStockThresholds && state.lowStockThresholds[item] !== undefined) {
+return state.lowStockThresholds[item];
+}
+return (state.lowStockThresholdDefault !== undefined) ? state.lowStockThresholdDefault : DEFAULT_LOW_STOCK_THRESHOLD;
+}
+function lowStockClass(qty, item) {
+if (qty === 0) return 'zero';
+if (qty <= getLowStockThreshold(item)) return 'low-stock';
+return '';
+}
+function openConfigModal() {
+document.getElementById('config-default').value =
+(state.lowStockThresholdDefault !== undefined) ? state.lowStockThresholdDefault : DEFAULT_LOW_STOCK_THRESHOLD;
+const allItems = new Set();
+Object.values(state.stock).forEach(loc => Object.keys(loc).forEach(i => allItems.add(i)));
+const listEl = document.getElementById('config-item-list');
+let html = '';
+CATEGORY_ORDER.forEach(cat => {
+const catItems = [...allItems].filter(i => getItemCategory(i) === cat).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+if (catItems.length === 0) return;
+const meta = CATEGORY_META[cat];
+html += `<div style="font-size:10.5px; font-weight:700; text-transform:uppercase; color:${meta.color}; margin:10px 0 4px 0;">${meta.label}</div>`;
+catItems.forEach(item => {
+const current = (state.lowStockThresholds && state.lowStockThresholds[item] !== undefined) ? state.lowStockThresholds[item] : '';
+html += `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 0;">
+<span style="font-size:13px;">${item}</span>
+<input type="number" min="0" data-item="${escapeAttr(item)}" class="config-item-input" placeholder="padrão" value="${current}" style="width:70px; padding:5px 7px; border-radius:6px; border:1px solid var(--border); font-size:13px;">
+</div>`;
+});
+});
+listEl.innerHTML = html;
+document.getElementById('modal-config').classList.add('open');
+}
+async function confirmConfig() {
+const defaultVal = parseInt(document.getElementById('config-default').value, 10);
+state.lowStockThresholdDefault = isNaN(defaultVal) ? DEFAULT_LOW_STOCK_THRESHOLD : defaultVal;
+if (!state.lowStockThresholds) state.lowStockThresholds = {};
+document.querySelectorAll('.config-item-input').forEach(input => {
+const item = input.dataset.item;
+const val = input.value.trim();
+if (val === '') {
+delete state.lowStockThresholds[item];
+} else {
+const n = parseInt(val, 10);
+if (!isNaN(n)) state.lowStockThresholds[item] = n;
+}
+});
+await saveData();
+renderStock();
+closeModal('modal-config');
+showToast('Limites de estoque baixo salvos.');
+}
+function toggleOosSection() {
+oosExpanded = !oosExpanded;
+renderStock();
+}
+function renderOutOfStock() {
+const totals = computeSummary();
+const outItems = Object.keys(totals).filter(i => totals[i].cx5L === 0 && totals[i].pt2L === 0 && totals[i].pt1L === 0 && totals[i].pt750ml === 0);
+if (outItems.length === 0) {
+return `
+<div class="card oos-card">
+<div class="card-header oos-header">
+<span>⚠ Sabores em falta</span>
+<span class="badge">0 zerados</span>
+</div>
+<div style="padding:14px; text-align:center; color:var(--muted); font-size:13px;">Nenhum sabor em falta no momento 🎉</div>
+</div>`;
+}
+let rows = '';
+CATEGORY_ORDER.forEach(cat => {
+const catItems = outItems.filter(i => getItemCategory(i) === cat).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+if (catItems.length === 0) return;
+const meta = CATEGORY_META[cat];
+rows += `<tr class="cat-row"><td colspan="2" style="border-top-color:${meta.color}; color:${meta.color}; background:${meta.bg};">${meta.label}</td></tr>`;
+catItems.forEach(item => {
+rows += `<tr>
+<td class="item"><span class="cat-dot" style="background:${meta.color}"></span>${escapeHTML(item)}</td>
+<td style="text-align:right;"><button class="icon-btn entrada oos-add" title="Registrar entrada" onclick="event.stopPropagation(); openEntradaModal(null,'${escapeAttr(item)}')">+ Entrada</button></td>
+</tr>`;
+});
+});
+return `
+<div class="card oos-card">
+<div class="card-header oos-header" onclick="toggleOosSection()" style="cursor:pointer;">
+<span>⚠ Sabores em falta</span>
+<span class="badge">${outItems.length} zerados ${oosExpanded ? '▲' : '▼ toque para ver'}</span>
+</div>
+<div class="table-wrap" style="display:${oosExpanded ? '' : 'none'};">
+<table>
+<tbody>${rows}</tbody>
+</table>
+</div>
+</div>`;
+}
+function renderSummary() {
+const totals = computeSummary();
+let grandCx5 = 0, grand2L = 0, grand1L = 0, grand750 = 0;
+let rows = '';
+const summaryColspan = reposicaoMarcarMode ? 8 : 7;
+CATEGORY_ORDER.forEach(cat => {
+const catItems = Object.keys(totals).filter(i => getItemCategory(i) === cat && (totals[i].cx5L > 0 || totals[i].pt2L > 0 || totals[i].pt1L > 0 || totals[i].pt750ml > 0)).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+if (catItems.length === 0) return;
+const meta = CATEGORY_META[cat];
+rows += `<tr class="cat-row"><td colspan="${summaryColspan}" style="border-top-color:${meta.color}; color:${meta.color}; background:${meta.bg};">${meta.label}</td></tr>`;
+catItems.forEach(item => {
+const q = totals[item];
+grandCx5 += q.cx5L;
+grand2L += q.pt2L;
+grand1L += q.pt1L;
+grand750 += q.pt750ml;
+const ondeLocs = [...q.locations].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(loc => `<span class="onde-link" onclick="goToFreezerCard('${escapeAttr(loc)}')">${escapeHTML(loc)}</span>`);
+if (q.inSelfService) ondeLocs.push(`<span class="onde-link onde-ss-link" onclick="goToSelfServicePanel()" title="Parte deste total está numa posição do Self Service — não aparece como card na aba Estoque">Self Service</span>`);
+const ondeHtml = ondeLocs.join(', ');
+const repoCheckCell = reposicaoMarcarMode ? `<td class="checkbox-cell"><input type="checkbox" class="row-check" ${state.reposicao && state.reposicao[item] ? 'checked' : ''} onchange="toggleReposicaoItem('${escapeAttr(item)}')"></td>` : '';
+const itemCell = reposicaoMarcarMode
+? `<td class="item"><span class="cat-dot" style="background:${meta.color}"></span><span class="onde-link" onclick="openReposicaoQtdModal('${escapeAttr(item)}')">${escapeHTML(item)}</span></td>`
+: `<td class="item"><span class="cat-dot" style="background:${meta.color}"></span>${escapeHTML(item)}</td>`;
+const cx5LAlert = reserveVendaAlertBadge(item, 'cx5L', cat);
+const cx5LCellContent = (cx5LAlert && getSelfServiceQty(item, 'cx5L') === 1)
+? reserveVendaAlertBadge(item, 'cx5L', cat, true)
+: `${q.cx5L}${cx5LAlert}`;
+rows += `<tr class="${reposicaoMarcarMode && state.reposicao && state.reposicao[item] ? 'row-selected' : ''}">
+${repoCheckCell}
+${itemCell}
+<td class="num ${lowStockClass(q.cx5L, item)}">${cx5LCellContent}</td>
+<td class="num ${lowStockClass(q.pt2L, item)}">${q.pt2L}${reserveVendaAlertBadge(item, 'pt2L', cat)}</td>
+<td class="num ${lowStockClass(q.pt1L, item)}">${q.pt1L}${reserveVendaAlertBadge(item, 'pt1L', cat)}</td>
+<td class="num ${lowStockClass(q.pt750ml, item)}">${q.pt750ml}${reserveVendaAlertBadge(item, 'pt750ml', cat)}</td>
+<td class="num total">${q.cx5L + q.pt2L + q.pt1L + q.pt750ml}</td>
+<td class="onde">${ondeHtml}</td>
+</tr>`;
+});
+});
+if (rows === '') {
+rows = `<tr><td colspan="${summaryColspan}" style="text-align:center; color:var(--muted); padding:16px;">Nenhum item em estoque ainda.</td></tr>`;
+}
+const repoToggleBtn = reposicaoMarcarMode
+? `<button class="select-toggle-btn active" onclick="toggleReposicaoMarcarMode()">✕ Cancelar</button>`
+: `<button class="select-toggle-btn" onclick="toggleReposicaoMarcarMode()">📋 Marcar reposição</button>`;
+return `
+<div class="card summary-card">
+<div class="card-header summary-header">
+<span>Resumo geral (todos os locais, exceto Vendas)</span>
+<span style="display:flex; align-items:center; gap:8px;">
+<span class="badge">${grandCx5 + grand2L + grand1L + grand750} volumes</span>
+${repoToggleBtn}
+</span>
+</div>
+<div class="summary-subbar">
+<span><strong>${grandCx5}</strong> caixas de 5L</span>
+<span><strong>${grand2L}</strong> potes de 2L</span>
+<span><strong>${grand1L}</strong> potes de 1L</span>
+<span><strong>${grand750}</strong> potes de 750ml</span>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr>${reposicaoMarcarMode ? '<th></th>' : ''}<th style="text-align:left;">Item</th><th>Cx5L</th><th>2L</th><th>1L</th><th>750ml</th><th>Total</th><th style="text-align:left;">Onde</th></tr></thead>
+<tbody>${rows}</tbody>
+</table>
+</div>
+</div>`;
+}
+function toggleReposicaoMarcarMode() {
+reposicaoMarcarMode = !reposicaoMarcarMode;
+renderStock();
+}
+async function toggleReposicaoItem(item) {
+if (!state.reposicao) state.reposicao = {};
+if (state.reposicao[item]) {
+delete state.reposicao[item];
+} else {
+state.reposicao[item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+}
+await saveData();
+renderStock();
+renderReposicao();
+}
+const REPOSICAO_PACKAGES = [
+{ tam: 'cx5L', label: 'Cx5L' },
+{ tam: 'pt2L', label: '2L' },
+{ tam: 'pt1L', label: '1L' },
+{ tam: 'pt750ml', label: '750ml' }
+];
+let reposicaoQtdItem = null;
+function openReposicaoQtdModal(item) {
+reposicaoQtdItem = item;
+document.getElementById('reposicao-qtd-title').textContent = `Reposição — ${item}`;
+const totals = computeSummary();
+const q = totals[item] || { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+const saved = (state.reposicao && state.reposicao[item]) ? state.reposicao[item] : null;
+const grid = document.getElementById('reposicao-qtd-grid');
+grid.innerHTML = REPOSICAO_PACKAGES.map(p => `
+<div class="transfer-pack-box">
+<div class="transfer-pack-label">${p.label}</div>
+<div class="hint transfer-pack-hint" id="reposicao-qtd-hint-${p.tam}"></div>
+<div class="qtd-buttons" id="reposicao-qtd-btns-${p.tam}"></div>
+<input type="number" id="reposicao-qtd-input-${p.tam}" min="0" value="${saved ? (saved[p.tam] || 0) : 0}" style="display:none;">
+</div>
+`).join('');
+REPOSICAO_PACKAGES.forEach(p => {
+const atual = q[p.tam] || 0;
+document.getElementById(`reposicao-qtd-hint-${p.tam}`).textContent = `Estoque atual: ${atual}`;
+renderQtyButtons(atual, `reposicao-qtd-btns-${p.tam}`, `reposicao-qtd-input-${p.tam}`, 'reposicao-qtd', p.tam, true);
+});
+document.getElementById('modal-reposicao-qtd').classList.add('open');
+}
+async function confirmReposicaoQtd() {
+if (!reposicaoQtdItem) return;
+const item = reposicaoQtdItem;
+const values = {};
+REPOSICAO_PACKAGES.forEach(p => {
+values[p.tam] = parseInt(document.getElementById(`reposicao-qtd-input-${p.tam}`).value, 10) || 0;
+});
+if (!state.reposicao) state.reposicao = {};
+state.reposicao[item] = values;
+await saveData();
+closeModal('modal-reposicao-qtd');
+renderStock();
+renderReposicao();
+}
+async function updateReposicaoQty(item, tam, value) {
+if (!state.reposicao || !state.reposicao[item]) return;
+const n = parseInt(value, 10);
+state.reposicao[item][tam] = (!isNaN(n) && n >= 0) ? n : 0;
+await saveData();
+}
+function renderReposicao() {
+const wrap = document.getElementById('reposicao-list');
+const emptyEl = document.getElementById('reposicao-empty');
+if (!wrap || !emptyEl) return;
+const items = Object.keys(state.reposicao || {}).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+if (items.length === 0) {
+wrap.innerHTML = '';
+emptyEl.style.display = 'block';
+return;
+}
+emptyEl.style.display = 'none';
+const rows = items.map(item => {
+const q = state.reposicao[item];
+return `<tr>
+<td class="item">${escapeHTML(item)}</td>
+<td class="num"><input type="number" min="0" class="repo-qty-input" value="${q.cx5L || 0}" onchange="updateReposicaoQty('${escapeAttr(item)}','cx5L', this.value)"></td>
+<td class="num"><input type="number" min="0" class="repo-qty-input" value="${q.pt2L || 0}" onchange="updateReposicaoQty('${escapeAttr(item)}','pt2L', this.value)"></td>
+<td class="num"><input type="number" min="0" class="repo-qty-input" value="${q.pt1L || 0}" onchange="updateReposicaoQty('${escapeAttr(item)}','pt1L', this.value)"></td>
+<td class="num"><input type="number" min="0" class="repo-qty-input" value="${q.pt750ml || 0}" onchange="updateReposicaoQty('${escapeAttr(item)}','pt750ml', this.value)"></td>
+<td class="checkbox-cell"><button type="button" class="repo-remove-btn" onclick="toggleReposicaoItem('${escapeAttr(item)}')" title="Remover da lista">✕</button></td>
+</tr>`;
+}).join('');
+wrap.innerHTML = `
+<div class="card">
+<div class="table-wrap">
+<table>
+<thead><tr><th style="text-align:left;">Item</th><th>Cx5L</th><th>2L</th><th>1L</th><th>750ml</th><th></th></tr></thead>
+<tbody>${rows}</tbody>
+</table>
+</div>
+</div>`;
+}
+async function clearReposicao() {
+if (!state.reposicao || Object.keys(state.reposicao).length === 0) return;
+if (!(await showConfirm('Limpar toda a lista de reposição? Essa ação não pode ser desfeita.', 'Limpar lista'))) return;
+state.reposicao = {};
+await saveData();
+renderStock();
+renderReposicao();
+showToast('Lista de reposição limpa.');
+}
+function printReposicao() {
+const est = document.getElementById('view-estoque');
+const hist = document.getElementById('view-historico');
+const repo = document.getElementById('view-reposicao');
+const prevEst = est.style.display, prevHist = hist.style.display, prevRepo = repo.style.display;
+est.style.display = 'none';
+hist.style.display = 'none';
+repo.style.display = '';
+document.body.classList.add('print-mode');
+window.print();
+const restore = () => {
+est.style.display = prevEst;
+hist.style.display = prevHist;
+repo.style.display = prevRepo;
+document.body.classList.remove('print-mode');
+window.removeEventListener('afterprint', restore);
+};
+window.addEventListener('afterprint', restore);
+}
+function toggleSelectionMode(freezer) {
+if (selectFreezer === freezer) {
+selectFreezer = null;
+selectedItems.clear();
+} else {
+selectFreezer = freezer;
+selectedItems.clear();
+}
+renderStock();
+}
+function toggleItemSelected(item) {
+if (selectedItems.has(item)) selectedItems.delete(item);
+else selectedItems.add(item);
+renderStock();
+}
+function selectAllInFreezer(freezer) {
+const items = state.stock[freezer] || {};
+Object.keys(items).forEach(i => {
+const q = items[i];
+if ((q.cx5L || 0) > 0 || (q.pt2L || 0) > 0 || q.pt1L > 0 || q.pt750ml > 0) selectedItems.add(i);
+});
+renderStock();
+}
+function openBulkTransferModal(freezer) {
+if (selectedItems.size === 0) return;
+bulkOrigem = freezer;
+refreshFromStorage(false).catch(() => {});
+document.getElementById('bulk-origem-label').textContent = freezer;
+document.getElementById('bulk-item-list').innerHTML =
+[...selectedItems].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(i => `• ${escapeHTML(i)}`).join('<br>');
+const destinoSel = document.getElementById('bulk-destino');
+destinoSel.innerHTML = buildFreezerOptgroups(freezer);
+document.getElementById('bulk-quem').value = '';
+document.getElementById('bulk-obs').value = '';
+document.getElementById('bulk-erro').style.display = 'none';
+document.getElementById('modal-bulk-transfer').classList.add('open');
+}
+async function confirmBulkTransfer() {
+const destino = document.getElementById('bulk-destino').value;
+const quem = document.getElementById('bulk-quem').value.trim();
+const obs = document.getElementById('bulk-obs').value.trim();
+const errEl = document.getElementById('bulk-erro');
+if (!destino) { errEl.textContent = 'Selecione o freezer de destino.'; errEl.style.display = 'block'; return; }
+if (!quem) { errEl.textContent = 'Informe quem está registrando.'; errEl.style.display = 'block'; return; }
+errEl.style.display = 'none';
+const sizes = ['cx5L', 'pt2L', 'pt1L', 'pt750ml'];
+if (!state.stock[destino]) state.stock[destino] = {};
+[...selectedItems].forEach(item => {
+const source = state.stock[bulkOrigem][item];
+if (!source) return;
+if (!state.stock[destino][item]) state.stock[destino][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+sizes.forEach(size => {
+const qty = source[size] || 0;
+if (qty > 0) {
+state.stock[destino][item][size] = (state.stock[destino][item][size] || 0) + qty;
+source[size] = 0;
+loteMoverTudo(bulkOrigem, destino, item, size);
+state.history.push({
+id: 'h' + Date.now() + Math.random().toString(36).slice(2, 7),
+ts: Date.now(), tipo: 'transferencia', freezer: bulkOrigem, destino, item, tamanho: size, qtd: qty, quem, obs
+});
+}
+});
+if (source.producedOn) state.stock[destino][item].producedOn = source.producedOn;
+});
+const ok = await saveData();
+if (!ok) { errEl.textContent = 'NÃO foi salvo — sem conexão com o servidor. Recarregue a página e tente de novo.'; errEl.style.display = 'block'; return; }
+const count = selectedItems.size;
+selectFreezer = null;
+selectedItems.clear();
+renderStock();
+renderHistory();
+closeModal('modal-bulk-transfer');
+showToast(`${count} sabor${count === 1 ? '' : 'es'} transferido${count === 1 ? '' : 's'}.`);
+}
+function renderFreezerCard(freezer, groupColor) {
+const items = state.stock[freezer] || {};
+const nonZeroKeys = Object.keys(items).filter(i => (items[i].cx5L || 0) > 0 || (items[i].pt2L || 0) > 0 || items[i].pt1L > 0 || items[i].pt750ml > 0);
+const selecting = selectFreezer === freezer;
+// Freezer vertical (vegano)/(sorvetes) nunca recebem Cx5L (regra central) — a coluna nem aparece
+// pra esses dois, em vez de aparecer sempre zerada e confundir. Os demais freezers (Estoque e
+// Self Service, este último com painel próprio) continuam mostrando Cx5L normalmente.
+const hideCx5L = VENDING_FREEZERS.includes(freezer);
+const baseCols = hideCx5L ? 5 : 6;
+const fullColspan = selecting ? baseCols + 1 : baseCols;
+let total = 0;
+let rows = '';
+if (nonZeroKeys.length === 0) {
+rows = `<tr><td colspan="${fullColspan}" style="text-align:center; color:var(--muted); padding:16px;">Nenhum item em estoque aqui — use "Entrada" ou "Transferir" para movimentar potes para cá.</td></tr>`;
+} else {
+CATEGORY_ORDER.forEach(cat => {
+const catItems = nonZeroKeys.filter(i => getItemCategory(i) === cat).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+if (catItems.length === 0) return;
+const meta = CATEGORY_META[cat];
+rows += `<tr class="cat-row"><td colspan="${fullColspan}" style="border-top-color:${meta.color}; color:${meta.color}; background:${meta.bg};">${meta.label}</td></tr>`;
+catItems.forEach(item => {
+const q = items[item];
+const rowTotal = (q.cx5L || 0) + (q.pt2L || 0) + q.pt1L + q.pt750ml;
+total += rowTotal;
+const multiLote = itemTemMultiplosLotes(freezer, item);
+const expandKey = loteExpandKey(freezer, item);
+const isExpanded = expandedLoteItems.has(expandKey);
+let dateTag;
+if (multiLote) {
+const allLotes = getAllLotesForItem(freezer, item);
+const porData = [...allLotes].sort((a, b) => loteSortKey(a) - loteSortKey(b));
+const principal = porData[0];
+const extra = allLotes.length - 1;
+const principalDateText = principal.producedOn ? escapeHTML(principal.producedOn) : 'sem data';
+dateTag = `<div class="produced-date lote-expand-trigger" onclick="event.stopPropagation(); toggleLoteExpand('${escapeAttr(freezer)}','${escapeAttr(item)}')">produzido ${principalDateText} <span class="lote-badge">+${extra} lote${extra === 1 ? '' : 's'} ${isExpanded ? '▲' : '▼'}</span></div>`;
+} else {
+dateTag = q.producedOn ? `<div class="produced-date">produzido ${escapeHTML(q.producedOn)}</div>` : '';
+}
+const checkCell = selecting ? `<td class="checkbox-cell"><input type="checkbox" class="row-check" ${selectedItems.has(item) ? 'checked' : ''} onchange="toggleItemSelected('${escapeAttr(item)}')"></td>` : '';
+const cx5LCell = hideCx5L ? '' : `<td class="num num-click ${lowStockClass(q.cx5L || 0, item)}" onclick="${selecting ? `toggleItemSelected('${escapeAttr(item)}')` : `openQuickAction('${escapeAttr(freezer)}','${escapeAttr(item)}','cx5L')`}">${q.cx5L || 0}</td>`;
+rows += `<tr class="${selecting && selectedItems.has(item) ? 'row-selected' : ''}">
+${checkCell}
+<td class="item"><span class="cat-dot" style="background:${meta.color}"></span>${escapeHTML(item)}${dateTag}</td>
+${cx5LCell}
+<td class="num num-click ${lowStockClass(q.pt2L || 0, item)}" onclick="${selecting ? `toggleItemSelected('${escapeAttr(item)}')` : `openQuickAction('${escapeAttr(freezer)}','${escapeAttr(item)}','pt2L')`}">${q.pt2L || 0}</td>
+<td class="num num-click ${lowStockClass(q.pt1L, item)}" onclick="${selecting ? `toggleItemSelected('${escapeAttr(item)}')` : `openQuickAction('${escapeAttr(freezer)}','${escapeAttr(item)}','pt1L')`}">${q.pt1L}</td>
+<td class="num num-click ${lowStockClass(q.pt750ml, item)}" onclick="${selecting ? `toggleItemSelected('${escapeAttr(item)}')` : `openQuickAction('${escapeAttr(freezer)}','${escapeAttr(item)}','pt750ml')`}">${q.pt750ml}</td>
+<td class="num total">${rowTotal}</td>
+</tr>`;
+if (multiLote && isExpanded) {
+const allLotes = getAllLotesForItem(freezer, item);
+const packOrder = ['cx5L', 'pt2L', 'pt1L', 'pt750ml'];
+const agrupado = [...allLotes].sort((a, b) => {
+const pa = packOrder.indexOf(a.tam), pb = packOrder.indexOf(b.tam);
+if (pa !== pb) return pa - pb;
+return loteSortKey(a) - loteSortKey(b);
+});
+const linhas = agrupado.map(l => `
+<div class="lote-detail-line">
+<span class="lote-detail-pack">${PACOTE_LABELS[l.tam]}</span>
+<span class="lote-detail-date">${l.producedOn ? escapeHTML(l.producedOn) : 'sem data'}</span>
+<span class="lote-detail-qty">${l.quantidade}</span>
+</div>`).join('');
+rows += `<tr class="lote-detail-row"><td colspan="${fullColspan}"><div class="lote-detail-wrap">${linhas}</div></td></tr>`;
+}
+});
+});
+}
+const desc = FREEZER_DESC[freezer];
+const selectBtn = selecting
+? `<button class="select-toggle-btn active" onclick="toggleSelectionMode('${escapeAttr(freezer)}')">✕ Cancelar</button>`
+: `<button class="select-toggle-btn" onclick="toggleSelectionMode('${escapeAttr(freezer)}')">☑ Selecionar</button>`;
+const abastecerBtn = VENDING_FREEZERS.includes(freezer)
+? `<button class="select-toggle-btn" onclick="openAbastecerVendas('${escapeAttr(freezer)}')">📦 Abastecer</button>`
+: '';
+const selectionBar = selecting ? `
+<div class="selection-bar">
+<span>${selectedItems.size} selecionado${selectedItems.size === 1 ? '' : 's'}</span>
+<button class="select-all-btn" onclick="selectAllInFreezer('${escapeAttr(freezer)}')">Selecionar todos</button>
+<button class="btn btn-transfer bulk-transfer-btn" ${selectedItems.size === 0 ? 'disabled' : ''} onclick="openBulkTransferModal('${escapeAttr(freezer)}')">⇄ Transferir selecionados</button>
+</div>` : '';
+const cx5LHeader = hideCx5L ? '' : '<th>Cx5L</th>';
+return `
+<div class="card" data-freezer-card="${escapeAttr(freezer)}">
+<div class="card-header"${groupColor ? ` style="background:${groupColor};"` : ''}>
+<span>${freezer}${desc ? `<div class="freezer-desc">${desc}</div>` : ''}</span>
+<span style="display:flex; align-items:center; gap:8px;">
+<span class="badge">${total} volumes</span>
+${abastecerBtn}
+${selectBtn}
+</span>
+</div>
+${selectionBar}
+<div class="table-wrap">
+<table>
+<thead><tr>${selecting ? '<th></th>' : ''}<th style="text-align:left;">Item</th>${cx5LHeader}<th>2L</th><th>1L</th><th>750ml</th><th>Total</th></tr></thead>
+<tbody>${rows}</tbody>
+</table>
+</div>
+</div>`;
+}
+function renderStock() {
+const wrap = document.getElementById('stock-cards');
+let html = renderSummary() + renderOutOfStock();
+LOCATION_GROUPS.forEach(group => {
+// Self Service A e B só aparecem no painel de grade dedicado (renderSelfServicePanel) —
+// não mais como cards de tabela tradicional aqui.
+if (group.title === 'Self Service') return;
+const existing = group.locations.filter(loc => state.stock[loc]);
+if (existing.length === 0) return;
+html += `<h3 class="section-title group-title"${group.color ? ` style="color:${group.color};"` : ''}>${group.title}</h3>`;
+existing.forEach(loc => { html += renderFreezerCard(loc, group.color); });
+});
+// Safety net: any location not covered by the known groups
+const known = LOCATION_GROUPS.flatMap(g => g.locations);
+const extra = Object.keys(state.stock).filter(l => !known.includes(l));
+if (extra.length > 0) {
+html += `<h3 class="section-title group-title">Outros locais</h3>`;
+extra.forEach(loc => { html += renderFreezerCard(loc); });
+}
+wrap.innerHTML = html;
+renderSelfServicePanel();
+}
+function renderSelfServicePanel() {
+const wrap = document.getElementById('selfservice-panel');
+if (!wrap) return;
+ensureSelfServicePositions();
+ensureInsumosData();
+const imp = state.insumosImportados;
+const importInfo = imp && imp.importedAt
+? `Insumos importados em: ${new Date(imp.importedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })} (${(imp.itens || []).length} itens)`
+: 'Nenhum estoque de insumos importado ainda — o cruzamento automático por importação não roda até você importar um arquivo.';
+let html = `
+<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin:4px 4px 4px 4px;">
+<h3 class="section-title group-title" style="color:#2323FF; margin:0;">Self Service — grade de posições</h3>
+<div style="display:flex; gap:6px; flex-wrap:wrap;">
+<button class="btn btn-secondary" style="width:auto; padding:6px 10px; font-size:12px;" onclick="openInsumosConfigModal()">⚙ Insumos por sabor</button>
+<button class="btn btn-secondary" style="width:auto; padding:6px 10px; font-size:12px;" onclick="triggerInsumosImport()">⬆ Importar estoque de insumos</button>
+</div>
+</div>
+<div class="hint" style="margin:0 4px 10px 4px;">${escapeHTML(importInfo)}</div>`;
+SELF_SERVICE_LOCATIONS.forEach(loc => { html += renderSelfServiceCard(loc); });
+wrap.innerHTML = html;
+}
+function renderSelfServiceCard(loc) {
+const positions = (state.selfServicePositions && state.selfServicePositions[loc]) || [];
+const swapMode = ssSwapModeActive;
+const repoMode = ssRepoModeActive;
+let boxes = '';
+positions.forEach((pos, idx) => {
+const isSelected = swapMode && ssSwapSelected && ssSwapSelected.loc === loc && ssSwapSelected.idx === idx;
+const selectedClass = isSelected ? ' ss-box-selected' : '';
+const isRepoMarked = repoMode && pos && pos.item && state.reposicao && state.reposicao[pos.item];
+const repoMarkedClass = isRepoMarked ? ' ss-box-repo-marked' : '';
+const trocarBtn = swapMode ? '' : `<button class="btn btn-secondary ss-box-swap-btn" onclick="event.stopPropagation(); openSelfServiceTrocar('${escapeAttr(loc)}', ${idx})">Trocar sorvete</button>`;
+if (!pos || !pos.item) {
+boxes += `
+<div class="ss-box ss-box-empty${selectedClass}" onclick="handleSelfServiceBoxClick('${escapeAttr(loc)}', ${idx})">
+<div class="ss-box-empty-label">${swapMode ? '(vazia)' : (repoMode ? '(vazia)' : '+ Ocupar')}</div>
+${trocarBtn}
+</div>`;
+} else {
+const cat = getItemCategory(pos.item);
+const meta = CATEGORY_META[cat];
+const reserve = getReserveCx5L(pos.item);
+const openedStr = pos.openedOn ? new Date(pos.openedOn).toLocaleDateString('pt-BR') : '—';
+const isFim = pos.situacao === 'Fim';
+const sitSolid = pos.situacao ? SS_SITUACAO_COLORS[pos.situacao] : null;
+const sitTextColor = sitSolid ? getContrastTextColor(sitSolid) : null;
+const boxBorderWidth = isFim ? '3px' : (sitSolid ? '2px' : '1px');
+const boxSitStyle = `border:${boxBorderWidth} solid ${sitSolid || 'var(--border)'}; border-top:4px solid ${meta.color}; background:var(--card-bg);`;
+const sitBar = sitSolid ? `<div class="ss-sit-bar" style="background:${sitSolid}; color:${sitTextColor};">${escapeHTML(pos.situacao)}</div>` : '';
+const selectSitStyle = sitSolid ? `background:${sitSolid}; border-color:${sitSolid}; color:${sitTextColor};` : '';
+const fimBadge = isFim ? ` <span class="ss-fim-badge" title="Situação: Fim — precisa trocar o sabor">⚠ FIM</span>` : '';
+const situacaoOptionsHtml = `<option value="">— selecionar —</option>` + SS_SITUACAO_OPTIONS.map(o => {
+const c = SS_SITUACAO_COLORS[o];
+const t = getContrastTextColor(c);
+return `<option value="${o}" ${pos.situacao === o ? 'selected' : ''} style="background:${c}; color:${t};">${o}</option>`;
+}).join('');
+const prodValue = pos.producaoNecessaria ? formatProducaoNecessaria(pos.producaoNecessaria) : '';
+const faltaInsumoManual = !!pos.faltaInsumoManual;
+const fichaAuto = getInsumoFaltaAuto(pos.item);
+const importAlertas = getInsumoImportAlertas(pos.item);
+const importAuto = importAlertas.length > 0;
+const faltaInsumoAuto = fichaAuto || importAuto;
+const faltaInsumo = faltaInsumoManual || faltaInsumoAuto;
+let autoDetailParts = [];
+importAlertas.forEach(a => {
+autoDetailParts.push(a.caixas !== undefined ? `${a.nome} — só dá ${a.caixas} caixa${a.caixas === 1 ? '' : 's'}` : `${a.nome} — ${a.kg} kg em estoque`);
+});
+if (fichaAuto) autoDetailParts.push('Ficha manual de insumos por sabor indica falta.');
+const autoDetailText = autoDetailParts.join(' · ') || 'Insumo em falta.';
+const autoBadge = faltaInsumoAuto
+? `<div class="ss-falta-auto-badge" title="${escapeForInlineAttr(autoDetailText)}" onclick="event.stopPropagation(); showAlert('${escapeForInlineAttr(autoDetailText)}')">⚠ auto: falta insumo (toque p/ detalhes)</div>`
+: '';
+const itemLabelHtml = repoMode
+? `<span class="onde-link" onclick="event.stopPropagation(); openReposicaoQtdModal('${escapeAttr(pos.item)}')">${escapeHTML(pos.item)}</span>`
+: escapeHTML(pos.item);
+const repoMarkedBadge = isRepoMarked ? ` <span class="ss-repo-marked-badge" title="Já marcado na lista de Reposição">📋</span>` : '';
+boxes += `
+<div class="ss-box${selectedClass}${repoMarkedClass}" style="${boxSitStyle}" onclick="handleSelfServiceBoxClick('${escapeAttr(loc)}', ${idx})">
+<div class="ss-box-item"><span class="cat-dot" style="background:${meta.color}"></span>${itemLabelHtml}${repoMarkedBadge}${fimBadge}</div>
+${sitBar}
+<div class="ss-box-line">Produzido: ${pos.producedOn ? escapeHTML(pos.producedOn) : '—'}</div>
+<div class="ss-box-line">Aberto em: ${openedStr}</div>
+<div class="ss-box-line">Reserva (Loja+Fábrica): <strong>${reserve}</strong> Cx5L</div>
+<select class="ss-situacao-select" style="${selectSitStyle}" ${swapMode ? 'disabled' : ''} onclick="event.stopPropagation()" onchange="setSelfServiceSituacao('${escapeAttr(loc)}', ${idx}, this.value)">${situacaoOptionsHtml}</select>
+<div class="ss-prod-row">
+<input type="text" class="ss-prod-input${faltaInsumo ? ' ss-prod-alert' : ''}" placeholder="Cx5L/2L/1L/750ml" value="${escapeHTML(prodValue)}" ${swapMode ? 'disabled' : ''} onclick="event.stopPropagation()" onchange="setSelfServiceProducao('${escapeAttr(loc)}', ${idx}, this.value)">
+</div>
+<label class="ss-falta-label" onclick="event.stopPropagation()">
+<input type="checkbox" ${faltaInsumoManual ? 'checked' : ''} ${swapMode ? 'disabled' : ''} onchange="toggleSelfServiceFaltaInsumo('${escapeAttr(loc)}', ${idx}, this.checked)"> Falta insumo (manual)
+</label>
+${autoBadge}
+${trocarBtn}
+</div>`;
+}
+});
+const swapBtn = swapMode
+? `<button class="select-toggle-btn active" onclick="toggleSelfServiceSwapMode()">✕ Cancelar</button>`
+: `<button class="select-toggle-btn" onclick="toggleSelfServiceSwapMode()" ${repoMode ? 'disabled' : ''}>🔀 Reorganizar</button>`;
+const repoBtn = repoMode
+? `<button class="select-toggle-btn active" onclick="toggleSelfServiceRepoMode()">✕ Cancelar</button>`
+: `<button class="select-toggle-btn" onclick="toggleSelfServiceRepoMode()" ${swapMode ? 'disabled' : ''}>📋 Marcar reposição</button>`;
+const swapHint = swapMode ? `<div class="selection-bar"><span>Toque numa posição ocupada e depois em outra (pode ser do outro freezer Self Service) para mover ou trocar de lugar.</span></div>` : '';
+const repoHint = repoMode ? `<div class="selection-bar"><span>Toque no sabor de uma posição ocupada para marcar embalagens e quantidades na lista de Reposição (aba Reposição). Não altera sabor, situação ou data de abertura da posição.</span></div>` : '';
+return `
+<div class="card">
+<div class="card-header" style="background:#2323FF;">
+<span>${loc}</span>
+<div style="display:flex; gap:6px; flex-wrap:wrap;">${swapBtn}${repoBtn}</div>
+</div>
+${swapHint}
+${repoHint}
+<div class="ss-grid">${boxes}</div>
+</div>`;
+}
+function toggleSelfServiceRepoMode() {
+ssRepoModeActive = !ssRepoModeActive;
+if (ssRepoModeActive) { ssSwapModeActive = false; ssSwapSelected = null; }
+renderStock();
+}
+function toggleSelfServiceSwapMode() {
+ssSwapModeActive = !ssSwapModeActive;
+if (ssSwapModeActive) { ssRepoModeActive = false; }
+ssSwapSelected = null;
+renderStock();
+}
+function handleSelfServiceBoxClick(loc, idx) {
+if (ssRepoModeActive) {
+const pos = state.selfServicePositions[loc][idx];
+if (!pos || !pos.item) { showToast('Selecione uma posição ocupada para marcar reposição.'); return; }
+openReposicaoQtdModal(pos.item);
+return;
+}
+if (ssSwapModeActive) {
+const pos = state.selfServicePositions[loc][idx];
+if (!ssSwapSelected) {
+if (!pos || !pos.item) { showToast('Selecione uma posição ocupada para mover.'); return; }
+ssSwapSelected = { loc, idx };
+renderStock();
+return;
+}
+if (ssSwapSelected.loc === loc && ssSwapSelected.idx === idx) {
+ssSwapSelected = null;
+renderStock();
+return;
+}
+performSelfServiceMove(ssSwapSelected.loc, ssSwapSelected.idx, loc, idx);
+ssSwapSelected = null;
+return;
+}
+openSelfServiceOccupy(loc, idx);
+}
+async function performSelfServiceMove(srcLoc, srcIdx, destLoc, destIdx) {
+const srcPos = state.selfServicePositions[srcLoc][srcIdx];
+if (!srcPos || !srcPos.item) { showToast('Selecione uma posição ocupada para mover.'); renderStock(); return; }
+const destPos = state.selfServicePositions[destLoc][destIdx];
+if (srcLoc === destLoc) {
+// Mesmo freezer: só reorganização visual/de dados, sem mexer em estoque
+const arr = state.selfServicePositions[srcLoc];
+const tmp = arr[srcIdx];
+arr[srcIdx] = arr[destIdx];
+arr[destIdx] = tmp;
+await saveData();
+renderStock();
+showToast('Posições trocadas.');
+return;
+}
+// Freezers diferentes: cada sabor movido gera uma transferência real de 1 Cx5L
+const now = new Date();
+if (!state.history) state.history = [];
+function transferOneCx5L(fromLoc, toLoc, item) {
+if (!state.stock[fromLoc]) state.stock[fromLoc] = {};
+if (!state.stock[fromLoc][item]) state.stock[fromLoc][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock[fromLoc][item].cx5L = Math.max(0, (state.stock[fromLoc][item].cx5L || 0) - 1);
+if (!state.stock[toLoc]) state.stock[toLoc] = {};
+if (!state.stock[toLoc][item]) state.stock[toLoc][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock[toLoc][item].cx5L = (state.stock[toLoc][item].cx5L || 0) + 1;
+const loteConsumido = loteRemover(fromLoc, item, 'cx5L', 1);
+if (loteConsumido.length > 0) {
+loteConsumido.forEach(c => loteAdicionar(toLoc, item, 'cx5L', c.quantidade, c.producedOn));
+} else {
+loteAdicionar(toLoc, item, 'cx5L', 1, null);
+}
+state.history.push({
+id: 'h_' + now.getTime() + '_' + Math.random().toString(36).slice(2, 7),
+ts: now.getTime(), tipo: 'transferencia', freezer: fromLoc, destino: toLoc, item, tamanho: 'cx5L', qtd: 1,
+quem: 'Reorganização (Self Service)', obs: 'Posição movida entre freezers Self Service'
+});
+}
+if (destPos && destPos.item) {
+// Destino ocupado: troca de lugar entre os dois — transferência nos dois sentidos
+transferOneCx5L(srcLoc, destLoc, srcPos.item);
+transferOneCx5L(destLoc, srcLoc, destPos.item);
+const tmp = state.selfServicePositions[srcLoc][srcIdx];
+state.selfServicePositions[srcLoc][srcIdx] = state.selfServicePositions[destLoc][destIdx];
+state.selfServicePositions[destLoc][destIdx] = tmp;
+} else {
+// Destino vazio: movimentação simples, transferência só no sentido de ida
+transferOneCx5L(srcLoc, destLoc, srcPos.item);
+state.selfServicePositions[destLoc][destIdx] = srcPos;
+state.selfServicePositions[srcLoc][srcIdx] = emptySelfServicePosition();
+}
+await saveData();
+renderStock();
+renderHistory();
+renderRelatorios();
+showToast(destPos && destPos.item
+? `Sabores trocados entre ${srcLoc} e ${destLoc} — 1 Cx5L transferido em cada sentido.`
+: `Sabor movido de ${srcLoc} para ${destLoc} — 1 Cx5L transferido.`);
+}
+async function setSelfServiceSituacao(loc, idx, value) {
+state.selfServicePositions[loc][idx].situacao = value || null;
+await saveData();
+renderStock();
+}
+async function setSelfServiceProducao(loc, idx, value) {
+state.selfServicePositions[loc][idx].producaoNecessaria = parseProducaoNecessaria(value);
+await saveData();
+renderStock();
+renderRelatorios();
+}
+async function toggleSelfServiceFaltaInsumo(loc, idx, checked) {
+state.selfServicePositions[loc][idx].faltaInsumoManual = !!checked;
+await saveData();
+renderStock();
+renderRelatorios();
+}
+function getOriginLocGroups() {
+const lojaGroup = LOCATION_GROUPS.find(g => g.title === 'Freezers Loja');
+const fabricaGroup = LOCATION_GROUPS.find(g => g.title === 'Freezers Fábrica');
+return { lojaLocs: lojaGroup ? lojaGroup.locations : [], fabricaLocs: fabricaGroup ? fabricaGroup.locations : [] };
+}
+// Sabor tem Cx5L de fato disponível numa origem (Loja/Fábrica) — passa pela regra central mesmo
+// sendo sempre verdadeiro pra Freezers Estoque (aceitam tudo), pra nunca ter lógica solta aqui.
+function hasStockCx5LAtOrigin(origin, item) {
+const q = state.stock[origin] && state.stock[origin][item];
+if (!q || (q.cx5L || 0) <= 0) return false;
+return embalagemPermitida(origin, getItemCategory(item), 'cx5L');
+}
+// Lista de sabores disponíveis para ocupar/trocar a posição (com Cx5L em ao menos um freezer de origem).
+// Não fixa mais uma origem única por sabor — a escolha do freezer de origem vira uma etapa separada
+// (ver getOriginOptionsForItem/openSelfServiceOriginModal), reaproveitada também pelo fluxo de "Ocupar".
+function buildSelfServiceTrocaOptions(loc, idx) {
+const pos = (state.selfServicePositions[loc] || [])[idx];
+const { lojaLocs, fabricaLocs } = getOriginLocGroups();
+const allLocs = [...lojaLocs, ...fabricaLocs];
+// Além de ter Cx5L na origem, o sabor só entra na lista se o DESTINO (loc) aceitar Cx5L pela
+// regra central. Isso é sempre verdade pro Self Service (só aceita Cx5L, ver embalagensPermitidas).
+// Para os freezers de Vendas (fluxo "Abastecer"), a regra nova diz que eles NUNCA aceitam Cx5L —
+// mas esse fluxo hoje só sabe mover Cx5L inteiras, então essa checagem de destino só é aplicada
+// quando loc é de fato um Self Service, até decidirmos como o Abastecer deve funcionar com a
+// nova regra (precisa de uma conversão Cx5L → potes que ainda não existe no app).
+const applyDestinoRule = SELF_SERVICE_LOCATIONS.includes(loc);
+const destinoAceitaCx5L = categoria => !applyDestinoRule || embalagemPermitida(loc, categoria, 'cx5L');
+const hasAnyCx5L = item => destinoAceitaCx5L(getItemCategory(item)) && allLocs.some(o => hasStockCx5LAtOrigin(o, item));
+const items = [];
+const seen = new Set();
+// 1. Mesmo sabor que já está na posição, se houver Cx5L em algum freezer de origem
+if (pos && pos.item && hasAnyCx5L(pos.item)) { items.push(pos.item); seen.add(pos.item); }
+// 2. Outros sabores disponíveis na Loja
+lojaLocs.forEach(o => {
+Object.keys(state.stock[o] || {}).sort((a, b) => a.localeCompare(b, 'pt-BR')).forEach(item => {
+if (seen.has(item)) return;
+if (hasStockCx5LAtOrigin(o, item) && destinoAceitaCx5L(getItemCategory(item))) { items.push(item); seen.add(item); }
+});
+});
+// 3. Outros sabores disponíveis na Fábrica
+fabricaLocs.forEach(o => {
+Object.keys(state.stock[o] || {}).sort((a, b) => a.localeCompare(b, 'pt-BR')).forEach(item => {
+if (seen.has(item)) return;
+if (hasStockCx5LAtOrigin(o, item) && destinoAceitaCx5L(getItemCategory(item))) { items.push(item); seen.add(item); }
+});
+});
+return items;
+}
+// Freezers de origem (Loja/Fábrica) que realmente têm Cx5L do sabor escolhido. Quando o freezer
+// tem só 1 lote (uma data), aparece como uma opção só (freezer + quantidade total + a data).
+// Quando tem mais de um lote (datas diferentes), cada lote vira uma opção própria (freezer + data
+// + quantidade daquele lote), pra o usuário escolher manualmente qual data trazer — essa escolha
+// manual tem prioridade sobre o FIFO automático (por isso cada opção carrega um "loteId").
+function getOriginOptionsForItem(item) {
+const { lojaLocs, fabricaLocs } = getOriginLocGroups();
+const options = [];
+[...lojaLocs, ...fabricaLocs].forEach(o => {
+if (!hasStockCx5LAtOrigin(o, item)) return;
+const q = state.stock[o][item];
+const rawLotes = state.lotes && state.lotes[o] && state.lotes[o][item] && state.lotes[o][item].cx5L;
+const lotes = Array.isArray(rawLotes) ? rawLotes : [];
+const lotesComEstoque = lotes.filter(l => l && (l.quantidade || 0) > 0);
+if (lotesComEstoque.length <= 1) {
+const unico = lotesComEstoque[0] || null;
+options.push({ origin: o, cx5L: q.cx5L, producedOn: unico ? unico.producedOn : (q.producedOn || null), loteId: unico ? unico.id : null });
+} else {
+const ordenados = [...lotesComEstoque].sort((a, b) => loteSortKey(a) - loteSortKey(b));
+ordenados.forEach(l => {
+options.push({ origin: o, cx5L: l.quantidade, producedOn: l.producedOn, loteId: l.id });
+});
+}
+});
+return options;
+}
+let ssOriginContext = null; // { mode: 'trocar' | 'occupy' | 'abastecer', loc, idx, item }
+function openSelfServiceOriginModal(mode, loc, idx, item) {
+const options = getOriginOptionsForItem(item);
+if (options.length === 0) {
+showAlert(`Nenhum Cx5L de "${item}" disponível em nenhum freezer de origem (Loja ou Fábrica).`);
+return;
+}
+ssOriginContext = { mode, loc, idx, item };
+document.getElementById('ss-origin-title').textContent = `Escolher freezer de origem — ${item}`;
+const listEl = document.getElementById('ss-origin-list');
+listEl.innerHTML = options.map(o => {
+const dateText = o.producedOn ? escapeHTML(o.producedOn) : 'sem data';
+const loteIdAttr = o.loteId ? escapeAttr(o.loteId) : '';
+return `<button class="btn btn-secondary" style="text-align:left; display:flex; justify-content:space-between; align-items:center; gap:8px;" onclick="confirmSelfServiceOrigin('${escapeAttr(o.origin)}', '${loteIdAttr}')">
+<span>${escapeHTML(o.origin)} <span style="color:var(--muted); font-weight:400;">— produzido ${dateText}</span></span>
+<span style="font-size:11px; color:var(--muted); white-space:nowrap;">${o.cx5L} caixa${o.cx5L === 1 ? '' : 's'}</span>
+</button>`;
+}).join('');
+document.getElementById('modal-ss-origin').classList.add('open');
+}
+async function confirmSelfServiceOrigin(origin, loteId) {
+if (!ssOriginContext) return;
+const { mode, loc, idx, item } = ssOriginContext;
+closeModal('modal-ss-origin');
+if (mode === 'trocar') {
+await confirmSelfServiceTrocar(loc, idx, item, origin, loteId || null);
+} else if (mode === 'abastecer') {
+await confirmAbastecerVendas(loc, item, origin, loteId || null);
+} else {
+await confirmSelfServiceOccupyWithOrigin(loc, idx, item, origin, loteId || null);
+}
+ssOriginContext = null;
+}
+function openSelfServiceTrocar(loc, idx) {
+const items = buildSelfServiceTrocaOptions(loc, idx);
+if (items.length === 0) {
+showAlert('Nenhum Cx5L disponível em nenhum freezer de origem (Loja ou Fábrica) para trocar esta posição.');
+return;
+}
+document.getElementById('ss-trocar-title').textContent = `${loc} — posição ${idx + 1} — Trocar sorvete`;
+const listEl = document.getElementById('ss-trocar-list');
+listEl.innerHTML = items.map(item => {
+const meta = CATEGORY_META[getItemCategory(item)];
+return `<button class="btn btn-secondary" style="text-align:left; display:flex; justify-content:space-between; align-items:center; gap:8px;" onclick="closeModal('modal-ss-trocar'); openSelfServiceOriginModal('trocar', '${escapeAttr(loc)}', ${idx}, '${escapeAttr(item)}')">
+<span><span class="cat-dot" style="background:${meta.color}"></span>${escapeHTML(item)}</span>
+</button>`;
+}).join('');
+document.getElementById('modal-ss-trocar').classList.add('open');
+}
+// Abastecer os freezers de venda direta (vegano/sorvetes): reaproveita os MESMOS modais e a
+// mesma lógica de "escolher sabor" (buildSelfServiceTrocaOptions) + "escolher freezer/lote de
+// origem" (openSelfServiceOriginModal) já usados no Self Service, sem duplicar nada.
+function openAbastecerVendas(destino) {
+const items = buildSelfServiceTrocaOptions(destino, null);
+if (items.length === 0) {
+showAlert('Nenhum Cx5L disponível em nenhum freezer de origem (Loja ou Fábrica) para abastecer esse freezer.');
+return;
+}
+document.getElementById('ss-trocar-title').textContent = `Abastecer ${destino}`;
+const listEl = document.getElementById('ss-trocar-list');
+listEl.innerHTML = items.map(item => {
+const meta = CATEGORY_META[getItemCategory(item)];
+return `<button class="btn btn-secondary" style="text-align:left; display:flex; justify-content:space-between; align-items:center; gap:8px;" onclick="closeModal('modal-ss-trocar'); openSelfServiceOriginModal('abastecer', '${escapeAttr(destino)}', null, '${escapeAttr(item)}')">
+<span><span class="cat-dot" style="background:${meta.color}"></span>${escapeHTML(item)}</span>
+</button>`;
+}).join('');
+document.getElementById('modal-ss-trocar').classList.add('open');
+}
+async function confirmSelfServiceTrocar(loc, idx, item, origin, loteId) {
+const q = state.stock[origin] && state.stock[origin][item];
+if (!q || (q.cx5L || 0) < 1) {
+showToast('Estoque insuficiente na origem — atualize e tente novamente.');
+closeModal('modal-ss-trocar');
+renderStock();
+return;
+}
+// Rede de segurança: o Self Service só aceita Cx5L pela regra central — mesmo que a lista já
+// tenha filtrado por isso, nunca deixa passar uma troca que a regra não permita.
+if (!embalagemPermitida(loc, getItemCategory(item), 'cx5L')) {
+showAlert(`${loc} não aceita Cx5L para essa categoria de sabor.`);
+closeModal('modal-ss-trocar');
+return;
+}
+// Se o usuário escolheu um lote específico (data de fabricação manual), tenta debitar
+// exatamente dele — tem prioridade sobre o FIFO automático. Se esse lote não existir mais
+// (ex: outra movimentação já usou), avisa em vez de travar/dar erro.
+let loteConsumido;
+if (loteId) {
+const resultado = loteRemoverPorId(origin, item, 'cx5L', loteId, 1);
+if (!resultado) {
+showAlert('O lote escolhido não está mais disponível — talvez já tenha sido usado por outra movimentação. Escolha novamente.');
+renderStock();
+return;
+}
+loteConsumido = [resultado];
+} else {
+loteConsumido = loteRemover(origin, item, 'cx5L', 1);
+}
+const pos = state.selfServicePositions[loc][idx];
+const now = new Date();
+// Registrar giro (tempo até vender) se a posição já tinha um sabor ocupando
+if (pos && pos.item) {
+if (!Array.isArray(state.selfServiceGiroHistory)) state.selfServiceGiroHistory = [];
+const chegou = pos.openedOn || now.toISOString();
+const dias = Math.max(0, Math.round((now.getTime() - new Date(chegou).getTime()) / 86400000));
+state.selfServiceGiroHistory.push({
+id: 'giro_' + now.getTime() + '_' + Math.random().toString(36).slice(2, 7),
+sabor: pos.item,
+freezer: loc,
+chegou,
+saiu: now.toISOString(),
+dias
+});
+}
+// Transferência real: debita 1 Cx5L da origem
+q.cx5L -= 1;
+if (!state.stock[loc]) state.stock[loc] = {};
+if (!state.stock[loc][item]) state.stock[loc][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock[loc][item].cx5L += 1;
+// Data de fabricação REAL da caixa que foi de fato debitada — vem do lote escolhido manualmente
+// ou do FIFO, nunca da data agregada nem da data da transferência. Se por algum motivo não
+// houver lote pra consumir (dado legado incompleto), usa a data mais antiga conhecida daquele
+// sabor/freezer de origem como alternativa, em vez de deixar em branco.
+const dataFabricacaoReal = loteConsumido.length > 0 ? loteConsumido[0].producedOn : getOldestKnownProducedOn(origin, item);
+if (loteConsumido.length > 0) {
+loteConsumido.forEach(c => loteAdicionar(loc, item, 'cx5L', c.quantidade, c.producedOn));
+} else {
+loteAdicionar(loc, item, 'cx5L', 1, dataFabricacaoReal);
+}
+if (!state.history) state.history = [];
+state.history.push({
+id: 'h_' + now.getTime() + '_' + Math.random().toString(36).slice(2, 7),
+ts: now.getTime(), tipo: 'transferencia', freezer: origin, destino: loc, item, tamanho: 'cx5L', qtd: 1,
+quem: 'Troca de sorvete (Self Service)', obs: `Troca automática na posição ${idx + 1} do ${loc}`,
+lotesConsumidos: loteConsumido
+});
+// Reinicia a posição: novo sabor, data de abertura agora, situação Cheio, produção necessária zerada
+state.selfServicePositions[loc][idx] = {
+item,
+producedOn: dataFabricacaoReal,
+openedOn: now.toISOString(),
+situacao: 'Cheio',
+producaoNecessaria: null,
+faltaInsumoManual: false
+};
+if (!state.itemCategories) state.itemCategories = {};
+if (!(item in state.itemCategories)) state.itemCategories[item] = 'sorvete';
+await saveData();
+renderStock();
+renderHistory();
+renderRelatorios();
+closeModal('modal-ss-trocar');
+showToast('Troca registrada — 1 Cx5L transferido de ' + origin + ' para ' + loc + '.');
+}
+function computeProducaoConsolidada() {
+const totals = {};
+SELF_SERVICE_LOCATIONS.forEach(loc => {
+(state.selfServicePositions[loc] || []).forEach(pos => {
+if (!pos || !pos.item || !pos.producaoNecessaria) return;
+const p = pos.producaoNecessaria;
+if ((p.cx5L || 0) + (p.pt2L || 0) + (p.pt1L || 0) + (p.pt750ml || 0) === 0) return;
+if (!totals[pos.item]) totals[pos.item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0, faltaInsumo: false };
+totals[pos.item].cx5L += p.cx5L || 0;
+totals[pos.item].pt2L += p.pt2L || 0;
+totals[pos.item].pt1L += p.pt1L || 0;
+totals[pos.item].pt750ml += p.pt750ml || 0;
+if (pos.faltaInsumoManual || getInsumoFaltaAuto(pos.item) || getInsumoImportAlertas(pos.item).length > 0) totals[pos.item].faltaInsumo = true;
+});
+});
+return totals;
+}
+function renderRelatorios() {
+renderRelatoriosProducao();
+renderRelatoriosGiro();
+}
+function renderRelatoriosProducao() {
+const wrap = document.getElementById('relatorios-producao-wrap');
+if (!wrap) return;
+const totals = computeProducaoConsolidada();
+const items = Object.keys(totals).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+if (items.length === 0) {
+wrap.innerHTML = `<div style="padding:14px; text-align:center; color:var(--muted); font-size:13px;">Nenhuma produção necessária pendente no momento.</div>`;
+return;
+}
+let rows = '';
+items.forEach(item => {
+const t = totals[item];
+const meta = CATEGORY_META[getItemCategory(item)];
+rows += `<tr>
+<td class="item"><span class="cat-dot" style="background:${meta.color}"></span>${escapeHTML(item)}${t.faltaInsumo ? ' <span style="color:var(--entrada); font-weight:700; font-size:11px;">falta insumo</span>' : ''}</td>
+<td class="num">${t.cx5L}</td>
+<td class="num">${t.pt2L}</td>
+<td class="num">${t.pt1L}</td>
+<td class="num">${t.pt750ml}</td>
+</tr>`;
+});
+wrap.innerHTML = `<div class="table-wrap"><table>
+<thead><tr><th style="text-align:left;">Sabor</th><th>Cx5L</th><th>2L</th><th>1L</th><th>750ml</th></tr></thead>
+<tbody>${rows}</tbody>
+</table></div>`;
+}
+function renderRelatoriosGiro() {
+const freezerSel = document.getElementById('relatorio-giro-freezer');
+const saborInput = document.getElementById('relatorio-giro-sabor');
+const body = document.getElementById('relatorio-giro-body');
+if (!freezerSel || !saborInput || !body) return;
+const freezerFilter = freezerSel.value;
+const saborFilter = saborInput.value.trim().toLowerCase();
+let entries = [...(state.selfServiceGiroHistory || [])];
+entries = entries.filter(e => {
+if (freezerFilter !== 'todos' && e.freezer !== freezerFilter) return false;
+if (saborFilter && !e.sabor.toLowerCase().includes(saborFilter)) return false;
+return true;
+});
+entries.sort((a, b) => new Date(b.saiu) - new Date(a.saiu));
+if (entries.length === 0) {
+body.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--muted); padding:14px;">Nenhum registro de troca ainda.</td></tr>`;
+return;
+}
+body.innerHTML = entries.map(e => {
+const chegouStr = new Date(e.chegou).toLocaleDateString('pt-BR');
+const saiuStr = new Date(e.saiu).toLocaleDateString('pt-BR');
+return `<tr>
+<td class="item">${escapeHTML(e.sabor)}</td>
+<td>${escapeHTML(e.freezer)}</td>
+<td style="font-size:11.5px;">${chegouStr} → ${saiuStr}</td>
+<td class="num">${e.dias}</td>
+</tr>`;
+}).join('');
+}
+let ssOccupyTarget = null; // { loc, idx }
+function openSelfServiceOccupy(loc, idx) {
+ssOccupyTarget = { loc, idx };
+const pos = state.selfServicePositions[loc][idx] || emptySelfServicePosition();
+document.getElementById('ss-occupy-title').textContent = `${loc} — posição ${idx + 1}`;
+document.getElementById('ss-occupy-item').value = pos.item || '';
+// Mesmo filtro do "Trocar sorvete": só sabores com Cx5L disponível em algum Freezer Estoque
+// (Loja ou Fábrica) — antes essa lista vinha de TODOS os locais (inclusive Self Service e
+// Vendas), sem filtro nenhum, o que era o bug.
+const items = buildSelfServiceTrocaOptions(loc, idx);
+document.getElementById('ss-occupy-item-list').innerHTML = items.map(i => `<option value="${escapeAttr(i)}">`).join('');
+document.getElementById('ss-occupy-clear-btn').style.display = pos.item ? '' : 'none';
+document.getElementById('modal-ss-occupy').classList.add('open');
+}
+async function confirmSelfServiceOccupy() {
+if (!ssOccupyTarget) return;
+const item = document.getElementById('ss-occupy-item').value.trim();
+if (!item) { showToast('Digite o sabor.'); return; }
+const { loc, idx } = ssOccupyTarget;
+const current = state.selfServicePositions[loc][idx];
+const isNewOccupation = !current || current.item !== item;
+if (isNewOccupation) {
+// Ocupação nova (sabor diferente do que estava, ou posição vazia) precisa vir de uma
+// transferência real do estoque de reserva — o usuário escolhe o freezer de origem
+// dentre os que realmente têm Cx5L do sabor (mesma etapa usada por "Trocar sorvete").
+// A data de fabricação não é mais digitada — vem automaticamente do lote FIFO consumido.
+closeModal('modal-ss-occupy');
+openSelfServiceOriginModal('occupy', loc, idx, item);
+return;
+}
+// Mesmo sabor que já ocupava a posição — só corrigindo o sabor/nada de novo, sem mover estoque
+// nem mexer na data de fabricação já registrada (não há mais campo manual pra isso).
+state.selfServicePositions[loc][idx] = {
+item,
+producedOn: current.producedOn || null,
+openedOn: current.openedOn || new Date().toISOString(),
+situacao: current.situacao || null,
+producaoNecessaria: current.producaoNecessaria || null,
+faltaInsumoManual: !!(current.faltaInsumoManual)
+};
+if (!state.itemCategories) state.itemCategories = {};
+if (!(item in state.itemCategories)) state.itemCategories[item] = 'sorvete';
+await saveData();
+renderStock();
+renderHistory();
+renderRelatorios();
+closeModal('modal-ss-occupy');
+showToast('Posição atualizada.');
+}
+async function confirmSelfServiceOccupyWithOrigin(loc, idx, item, origin, loteId) {
+const q = state.stock[origin] && state.stock[origin][item];
+if (!q || (q.cx5L || 0) < 1) {
+showToast('Estoque insuficiente na origem — atualize e tente novamente.');
+renderStock();
+return;
+}
+if (!embalagemPermitida(loc, getItemCategory(item), 'cx5L')) {
+showAlert(`${loc} não aceita Cx5L para essa categoria de sabor.`);
+return;
+}
+// Se o usuário escolheu um lote específico (data de fabricação manual), tenta debitar
+// exatamente dele — tem prioridade sobre o FIFO automático. Se esse lote não existir mais,
+// avisa em vez de travar/dar erro.
+let loteConsumido;
+if (loteId) {
+const resultado = loteRemoverPorId(origin, item, 'cx5L', loteId, 1);
+if (!resultado) {
+showAlert('O lote escolhido não está mais disponível — talvez já tenha sido usado por outra movimentação. Escolha novamente.');
+renderStock();
+return;
+}
+loteConsumido = [resultado];
+} else {
+loteConsumido = loteRemover(origin, item, 'cx5L', 1);
+}
+const current = state.selfServicePositions[loc][idx];
+const now = new Date();
+// Registrar giro (tempo até vender) se a posição já tinha outro sabor ocupando
+if (current && current.item) {
+if (!Array.isArray(state.selfServiceGiroHistory)) state.selfServiceGiroHistory = [];
+const chegou = current.openedOn || now.toISOString();
+const dias = Math.max(0, Math.round((now.getTime() - new Date(chegou).getTime()) / 86400000));
+state.selfServiceGiroHistory.push({
+id: 'giro_' + now.getTime() + '_' + Math.random().toString(36).slice(2, 7),
+sabor: current.item, freezer: loc, chegou, saiu: now.toISOString(), dias
+});
+}
+// Transferência real: debita 1 Cx5L da origem e soma no Self Service
+q.cx5L -= 1;
+if (!state.stock[loc]) state.stock[loc] = {};
+if (!state.stock[loc][item]) state.stock[loc][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock[loc][item].cx5L += 1;
+// Data de fabricação REAL da caixa que foi de fato debitada (lote escolhido manualmente ou FIFO).
+const dataFabricacaoReal = loteConsumido.length > 0 ? loteConsumido[0].producedOn : getOldestKnownProducedOn(origin, item);
+if (loteConsumido.length > 0) {
+loteConsumido.forEach(c => loteAdicionar(loc, item, 'cx5L', c.quantidade, c.producedOn));
+} else {
+loteAdicionar(loc, item, 'cx5L', 1, dataFabricacaoReal);
+}
+if (!state.history) state.history = [];
+state.history.push({
+id: 'h_' + now.getTime() + '_' + Math.random().toString(36).slice(2, 7),
+ts: now.getTime(), tipo: 'transferencia', freezer: origin, destino: loc, item, tamanho: 'cx5L', qtd: 1,
+quem: 'Ocupar posição (Self Service)', obs: `Posição ${idx + 1} do ${loc} ocupada manualmente`,
+lotesConsumidos: loteConsumido
+});
+state.selfServicePositions[loc][idx] = {
+item,
+producedOn: dataFabricacaoReal,
+openedOn: now.toISOString(),
+situacao: null,
+producaoNecessaria: null,
+faltaInsumoManual: false
+};
+if (!state.itemCategories) state.itemCategories = {};
+if (!(item in state.itemCategories)) state.itemCategories[item] = 'sorvete';
+await saveData();
+renderStock();
+renderHistory();
+renderRelatorios();
+showToast(`Posição ocupada — 1 Cx5L transferido de ${origin} para ${loc}.`);
+}
+// Abastecer um freezer de venda direta (vegano/sorvetes) com 1 Cx5L do lote escolhido — sem
+// grade de posições (esses freezers não têm isso), só transferência real simples, reaproveitando
+// a mesma lógica de lote/FIFO manual dos fluxos do Self Service.
+// ⚠ CONFLITO CONHECIDO COM A REGRA CENTRAL (embalagensPermitidas): pela regra oficial, os
+// freezers verticais (vegano/sorvetes) NUNCA aceitam Cx5L — só potes. Este fluxo, herdado de
+// antes da regra existir, grava Cx5L diretamente no destino. Deixado como está de propósito
+// (sem rede de segurança aqui) até decidir com o Carlos se o Abastecer deve ser descontinuado,
+// bloqueado, ou reformulado para mover potes com alguma conversão Cx5L→potes ainda não definida.
+async function confirmAbastecerVendas(destino, item, origin, loteId) {
+const q = state.stock[origin] && state.stock[origin][item];
+if (!q || (q.cx5L || 0) < 1) {
+showToast('Estoque insuficiente na origem — atualize e tente novamente.');
+renderStock();
+return;
+}
+let loteConsumido;
+if (loteId) {
+const resultado = loteRemoverPorId(origin, item, 'cx5L', loteId, 1);
+if (!resultado) {
+showAlert('O lote escolhido não está mais disponível — talvez já tenha sido usado por outra movimentação. Escolha novamente.');
+renderStock();
+return;
+}
+loteConsumido = [resultado];
+} else {
+loteConsumido = loteRemover(origin, item, 'cx5L', 1);
+}
+const now = new Date();
+q.cx5L -= 1;
+if (!state.stock[destino]) state.stock[destino] = {};
+if (!state.stock[destino][item]) state.stock[destino][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock[destino][item].cx5L += 1;
+const dataFabricacaoReal = loteConsumido.length > 0 ? loteConsumido[0].producedOn : getOldestKnownProducedOn(origin, item);
+if (loteConsumido.length > 0) {
+loteConsumido.forEach(c => loteAdicionar(destino, item, 'cx5L', c.quantidade, c.producedOn));
+} else {
+loteAdicionar(destino, item, 'cx5L', 1, dataFabricacaoReal);
+}
+state.stock[destino][item].producedOn = dataFabricacaoReal;
+if (!state.history) state.history = [];
+state.history.push({
+id: 'h_' + now.getTime() + '_' + Math.random().toString(36).slice(2, 7),
+ts: now.getTime(), tipo: 'transferencia', freezer: origin, destino, item, tamanho: 'cx5L', qtd: 1,
+quem: 'Abastecer freezer de vendas', obs: `Abastecimento manual de ${destino}`,
+lotesConsumidos: loteConsumido
+});
+if (!state.itemCategories) state.itemCategories = {};
+if (!(item in state.itemCategories)) state.itemCategories[item] = 'sorvete';
+await saveData();
+renderStock();
+renderHistory();
+showToast(`1 Cx5L de "${item}" transferido de ${origin} para ${destino}.`);
+}
+async function confirmSelfServiceClear() {
+if (!ssOccupyTarget) return;
+const { loc, idx } = ssOccupyTarget;
+const ok = await showConfirm('Esvaziar esta posição do Self Service?', 'Esvaziar');
+if (!ok) return;
+state.selfServicePositions[loc][idx] = emptySelfServicePosition();
+await saveData();
+renderStock();
+closeModal('modal-ss-occupy');
+showToast('Posição esvaziada.');
+}
+function escapeAttr(s) { return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+function escapeHTML(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function buildFreezerOptgroups(excludeFreezer) {
+let html = '';
+LOCATION_GROUPS.forEach(group => {
+const locs = group.locations.filter(l => state.stock[l] && l !== excludeFreezer);
+if (locs.length === 0) return;
+html += `<optgroup label="${group.title}">`;
+locs.forEach(l => { html += `<option value="${l}">${l}</option>`; });
+html += `</optgroup>`;
+});
+const known = LOCATION_GROUPS.flatMap(g => g.locations);
+const extra = Object.keys(state.stock).filter(l => !known.includes(l) && l !== excludeFreezer);
+if (extra.length > 0) {
+html += `<optgroup label="Outros locais">`;
+extra.forEach(l => { html += `<option value="${l}">${l}</option>`; });
+html += `</optgroup>`;
+}
+return html;
+}
+const DESTINO_PRIORITY = ['FTV 03', 'Freezer vertical (vegano)', 'Freezer vertical (sorvetes)'];
+function buildDestinoOptions(excludeFreezer) {
+let html = '';
+const priorityLocs = DESTINO_PRIORITY.filter(l => state.stock[l] && l !== excludeFreezer);
+priorityLocs.forEach(l => { html += `<option value="${l}">${l}</option>`; });
+LOCATION_GROUPS.forEach(group => {
+const locs = group.locations.filter(l => state.stock[l] && l !== excludeFreezer && !DESTINO_PRIORITY.includes(l));
+if (locs.length === 0) return;
+html += `<optgroup label="${group.title}">`;
+locs.forEach(l => { html += `<option value="${l}">${l}</option>`; });
+html += `</optgroup>`;
+});
+const known = LOCATION_GROUPS.flatMap(g => g.locations);
+const extra = Object.keys(state.stock).filter(l => !known.includes(l) && l !== excludeFreezer);
+if (extra.length > 0) {
+html += `<optgroup label="Outros locais">`;
+extra.forEach(l => { html += `<option value="${l}">${l}</option>`; });
+html += `</optgroup>`;
+}
+return html;
+}
+function buildItemOptgroups(itemsObj) {
+let html = '';
+CATEGORY_ORDER.forEach(cat => {
+const catItems = Object.keys(itemsObj).filter(i => getItemCategory(i) === cat).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+if (catItems.length === 0) return;
+html += `<optgroup label="${CATEGORY_META[cat].label}">`;
+catItems.forEach(i => { html += `<option value="${i}">${i}</option>`; });
+html += `</optgroup>`;
+});
+return html;
+}
+function populateFilterFreezer() {
+const sel = document.getElementById('filter-freezer');
+sel.innerHTML = '<option value="todos">Todos os freezers</option>' + buildFreezerOptgroups();
+}
+function renderHistory() {
+const freezerFilter = document.getElementById('filter-freezer').value;
+const tipoFilter = document.getElementById('filter-tipo').value;
+const busca = document.getElementById('filter-busca').value.trim().toLowerCase();
+let entries = [...state.history].sort((a, b) => b.ts - a.ts);
+entries = entries.filter(e => {
+if (freezerFilter !== 'todos') {
+const freezerMatch = e.tipo === 'transferencia'
+? (e.freezer === freezerFilter || e.destino === freezerFilter)
+: e.freezer === freezerFilter;
+if (!freezerMatch) return false;
+}
+if (tipoFilter !== 'todos' && e.tipo !== tipoFilter) return false;
+if (busca && !e.item.toLowerCase().includes(busca)) return false;
+return true;
+});
+const body = document.getElementById('history-body');
+const empty = document.getElementById('history-empty');
+if (entries.length === 0) {
+body.innerHTML = '';
+empty.style.display = 'block';
+return;
+}
+empty.style.display = 'none';
+body.innerHTML = entries.map(e => {
+const dt = new Date(e.ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+const tipoTag = e.tipo === 'saida'
+? '<span class="tag tag-saida">Saída</span>'
+: e.tipo === 'entrada'
+? '<span class="tag tag-entrada">Entrada</span>'
+: '<span class="tag tag-transfer">Transferência</span>';
+const freezerCol = e.tipo === 'transferencia' ? `${e.freezer} → ${e.destino}` : e.freezer;
+const motivoCol = e.tipo === 'saida' ? e.motivo : '—';
+return `<tr>
+<td>${dt}</td>
+<td>${tipoTag}</td>
+<td>${escapeHTML(freezerCol)}</td>
+<td class="item">${escapeHTML(e.item)}${e.obs ? `<div class="hint">${escapeHTML(e.obs)}</div>` : ''}</td>
+<td>${SIZE_LABEL[e.tamanho] || escapeHTML(e.tamanho)}</td>
+<td class="num">${e.qtd}</td>
+<td>${escapeHTML(motivoCol)}</td>
+<td>${e.quem ? escapeHTML(e.quem) : '—'}</td>
+<td><button class="del-btn" onclick="deleteEntry('${e.id}')" title="Excluir e desfazer no estoque">excluir</button></td>
+</tr>`;
+}).join('');
+}
+async function deleteEntry(id) {
+const entry = state.history.find(e => e.id === id);
+if (!entry) return;
+if (!(await showConfirm('Excluir este registro e desfazer o efeito no estoque?'))) return;
+function ensureSlot(loc, itm) {
+if (!state.stock[loc]) state.stock[loc] = {};
+if (!state.stock[loc][itm]) state.stock[loc][itm] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+}
+if (entry.tipo === 'saida') {
+ensureSlot(entry.freezer, entry.item);
+state.stock[entry.freezer][entry.item][entry.tamanho] += entry.qtd;
+// Desfazer uma saída é uma re-entrada — não tínhamos a data de fabricação guardada no
+// registro de saída, então usamos a data agregada atual do freezer/sabor como melhor esforço.
+loteAdicionar(entry.freezer, entry.item, entry.tamanho, entry.qtd, entry.producedOn || (state.stock[entry.freezer][entry.item].producedOn || null));
+} else if (entry.tipo === 'entrada') {
+ensureSlot(entry.freezer, entry.item);
+state.stock[entry.freezer][entry.item][entry.tamanho] -= entry.qtd;
+loteRemoverExato(entry.freezer, entry.item, entry.tamanho, entry.qtd, entry.producedOn || null);
+} else {
+ensureSlot(entry.freezer, entry.item);
+state.stock[entry.freezer][entry.item][entry.tamanho] += entry.qtd;
+if (entry.destino) {
+ensureSlot(entry.destino, entry.item);
+state.stock[entry.destino][entry.item][entry.tamanho] -= entry.qtd;
+const loteConsumido = loteRemover(entry.destino, entry.item, entry.tamanho, entry.qtd);
+if (loteConsumido.length > 0) {
+loteConsumido.forEach(c => loteAdicionar(entry.freezer, entry.item, entry.tamanho, c.quantidade, c.producedOn));
+} else {
+loteAdicionar(entry.freezer, entry.item, entry.tamanho, entry.qtd, null);
+}
+}
+}
+state.history = state.history.filter(e => e.id !== id);
+await saveData();
+renderStock();
+renderHistory();
+showToast('Registro excluído e estoque ajustado.');
+}
+/* ---------- Ação rápida (clique na quantidade) ---------- */
+let quickCtx = null;
+function openQuickAction(freezer, item, tamanho) {
+quickCtx = { freezer, item, tamanho };
+document.getElementById('quick-title').textContent = `${item} · ${SIZE_LABEL[tamanho]} — ${freezer}`;
+document.getElementById('modal-quick').classList.add('open');
+}
+function quickEntrada() {
+closeModal('modal-quick');
+openEntradaModal(quickCtx.freezer, quickCtx.item, quickCtx.tamanho);
+}
+function quickSaida() {
+closeModal('modal-quick');
+openSaidaModal(quickCtx.freezer, quickCtx.item, quickCtx.tamanho);
+}
+function quickTransfer() {
+closeModal('modal-quick');
+openTransferModal(quickCtx.freezer, quickCtx.item, quickCtx.tamanho);
+}
+/* ---------- Modal: Entrada ---------- */
+async function openEntradaModal(freezer, item, tamanho) {
+await refreshFromStorage(false);
+const freezerSel = document.getElementById('entrada-freezer');
+freezerSel.innerHTML = buildFreezerOptgroups();
+if (freezer) freezerSel.value = freezer;
+else freezerSel.value = 'MTC 01';
+const allItems = new Set();
+Object.values(state.stock).forEach(loc => Object.keys(loc).forEach(i => allItems.add(i)));
+document.getElementById('entrada-item-list').innerHTML =
+[...allItems].sort().map(i => `<option value="${i}">`).join('');
+document.getElementById('entrada-item').value = item || '';
+document.getElementById('entrada-categoria').value = item ? getItemCategory(item) : 'sorvete';
+renderEntradaPackages();
+if (tamanho) {
+const packInput = document.getElementById(`entrada-pack-qtd-${tamanho}`);
+if (packInput) { packInput.value = 1; packInput.focus(); packInput.select(); }
+}
+const existing = (freezer && item && state.stock[freezer] && state.stock[freezer][item]) ? state.stock[freezer][item] : null;
+document.getElementById('entrada-data-producao').value = (existing && existing.producedOn) ? existing.producedOn : '';
+document.getElementById('entrada-quem').value = '';
+document.getElementById('entrada-obs').value = '';
+document.getElementById('entrada-erro').style.display = 'none';
+document.getElementById('modal-entrada').classList.add('open');
+}
+const ENTRADA_PACKAGES = [
+{ tam: 'cx5L', label: 'Cx5L' },
+{ tam: 'pt2L', label: '2L' },
+{ tam: 'pt1L', label: '1L' },
+{ tam: 'pt750ml', label: '750ml' }
+];
+function onEntradaFreezerChange() { renderEntradaPackages(); }
+function onEntradaCategoriaChange() { renderEntradaPackages(); }
+// Mostra só as embalagens que a regra central permite para o freezer+categoria escolhidos —
+// em vez das 4 embalagens sempre fixas (uma delas podia não fazer sentido físico ali).
+function renderEntradaPackages() {
+const grid = document.getElementById('entrada-pack-grid');
+const hintEl = document.getElementById('entrada-pack-empty-hint');
+if (!grid) return;
+const freezer = document.getElementById('entrada-freezer').value;
+const categoria = document.getElementById('entrada-categoria').value;
+const allowed = embalagensPermitidas(freezer, categoria);
+// Preserva quantidades já digitadas antes de reconstruir a grade.
+const previousValues = {};
+ENTRADA_PACKAGES.forEach(p => {
+const existingInput = document.getElementById(`entrada-pack-qtd-${p.tam}`);
+if (existingInput) previousValues[p.tam] = existingInput.value;
+});
+const visible = ENTRADA_PACKAGES.filter(p => allowed.includes(p.tam));
+if (visible.length === 0) {
+grid.innerHTML = '';
+if (hintEl) {
+hintEl.textContent = `${freezer || 'Esse freezer'} não aceita nenhuma embalagem para a categoria "${CATEGORY_META[categoria] ? CATEGORY_META[categoria].label : categoria}".`;
+hintEl.style.display = 'block';
+}
+return;
+}
+if (hintEl) hintEl.style.display = 'none';
+grid.innerHTML = visible.map(p => `
+<div class="transfer-pack-box">
+<div class="transfer-pack-label">${p.label}</div>
+<input type="number" id="entrada-pack-qtd-${p.tam}" min="0" value="0">
+</div>
+`).join('');
+visible.forEach(p => {
+if (previousValues[p.tam] !== undefined) {
+document.getElementById(`entrada-pack-qtd-${p.tam}`).value = previousValues[p.tam];
+}
+});
+}
+function onEntradaItemInput() {
+const item = document.getElementById('entrada-item').value.trim();
+if (item && state.itemCategories && state.itemCategories[item]) {
+document.getElementById('entrada-categoria').value = state.itemCategories[item];
+renderEntradaPackages();
+}
+}
+/* ---------- Seletor de data de produção (Hoje / digitar / calendário) ---------- */
+function formatDateBR(date) {
+const dd = String(date.getDate()).padStart(2, '0');
+const mm = String(date.getMonth() + 1).padStart(2, '0');
+const yyyy = date.getFullYear();
+return `${dd}/${mm}/${yyyy}`;
+}
+function isValidDateBR(str) {
+const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(str || '');
+if (!m) return false;
+const dd = parseInt(m[1], 10), mm = parseInt(m[2], 10), yyyy = parseInt(m[3], 10);
+if (mm < 1 || mm > 12) return false;
+const daysInMonth = new Date(yyyy, mm, 0).getDate();
+if (dd < 1 || dd > daysInMonth) return false;
+return true;
+}
+function openDataProducaoPicker() {
+document.getElementById('data-producao-hoje-label').textContent = `📅 Hoje (${formatDateBR(new Date())})`;
+document.getElementById('data-producao-step-hoje').style.display = '';
+document.getElementById('data-producao-step-custom').style.display = 'none';
+document.getElementById('data-producao-erro').style.display = 'none';
+const atual = document.getElementById('entrada-data-producao').value.trim();
+document.getElementById('data-producao-input-texto').value = isValidDateBR(atual) ? atual : '';
+document.getElementById('data-producao-input-calendario').value = '';
+document.getElementById('modal-data-producao').classList.add('open');
+}
+function pickDataProducaoHoje() {
+document.getElementById('entrada-data-producao').value = formatDateBR(new Date());
+closeModal('modal-data-producao');
+}
+function showDataProducaoCustom() {
+document.getElementById('data-producao-step-hoje').style.display = 'none';
+document.getElementById('data-producao-step-custom').style.display = '';
+}
+function voltarDataProducaoStep() {
+document.getElementById('data-producao-step-custom').style.display = 'none';
+document.getElementById('data-producao-step-hoje').style.display = '';
+document.getElementById('data-producao-erro').style.display = 'none';
+}
+function onDataProducaoTextoInput() {
+const input = document.getElementById('data-producao-input-texto');
+const digits = input.value.replace(/\D/g, '').slice(0, 8);
+let formatted = digits;
+if (digits.length > 4) formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+else if (digits.length > 2) formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+input.value = formatted;
+}
+function onDataProducaoCalendarioChange() {
+const val = document.getElementById('data-producao-input-calendario').value;
+if (!val) return;
+const [yyyy, mm, dd] = val.split('-');
+document.getElementById('data-producao-input-texto').value = `${dd}/${mm}/${yyyy}`;
+}
+function confirmDataProducaoCustom() {
+const texto = document.getElementById('data-producao-input-texto').value.trim();
+const errEl = document.getElementById('data-producao-erro');
+if (!isValidDateBR(texto)) {
+errEl.textContent = 'Informe uma data válida no formato dd/mm/aaaa.';
+errEl.style.display = 'block';
+return;
+}
+errEl.style.display = 'none';
+document.getElementById('entrada-data-producao').value = texto;
+closeModal('modal-data-producao');
+}
+async function confirmEntrada() {
+const freezer = document.getElementById('entrada-freezer').value;
+const item = document.getElementById('entrada-item').value.trim();
+const categoria = document.getElementById('entrada-categoria').value;
+const dataProducao = document.getElementById('entrada-data-producao').value.trim();
+const quem = document.getElementById('entrada-quem').value.trim();
+const obs = document.getElementById('entrada-obs').value.trim();
+const errEl = document.getElementById('entrada-erro');
+if (!item) { errEl.textContent = 'Digite o sabor/item.'; errEl.style.display = 'block'; return; }
+const packs = ENTRADA_PACKAGES.map(p => {
+const inputEl = document.getElementById(`entrada-pack-qtd-${p.tam}`);
+return { tam: p.tam, qtd: inputEl ? (parseInt(inputEl.value, 10) || 0) : 0 };
+}).filter(p => p.qtd > 0);
+if (packs.length === 0) { errEl.textContent = 'Informe a quantidade de pelo menos uma embalagem.'; errEl.style.display = 'block'; return; }
+// Rede de segurança: mesmo que a interface já filtre as embalagens visíveis, nunca deixa
+// passar uma combinação freezer+categoria+embalagem que a regra central não permite.
+const invalidPack = packs.find(p => !embalagemPermitida(freezer, categoria, p.tam));
+if (invalidPack) {
+errEl.textContent = `${SIZE_LABEL[invalidPack.tam]} não é uma embalagem aceita em ${freezer} para essa categoria.`;
+errEl.style.display = 'block';
+return;
+}
+if (!isValidDateBR(dataProducao)) { errEl.textContent = 'Toque no campo "Data de produção" e selecione uma data válida.'; errEl.style.display = 'block'; return; }
+if (!quem) { errEl.textContent = 'Informe quem está registrando.'; errEl.style.display = 'block'; return; }
+errEl.style.display = 'none';
+if (!state.stock[freezer]) state.stock[freezer] = {};
+if (!state.stock[freezer][item]) state.stock[freezer][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+packs.forEach(p => { state.stock[freezer][item][p.tam] += p.qtd; });
+state.stock[freezer][item].producedOn = dataProducao;
+packs.forEach(p => { loteAdicionar(freezer, item, p.tam, p.qtd, dataProducao); });
+if (!state.itemCategories) state.itemCategories = {};
+state.itemCategories[item] = categoria;
+packs.forEach(p => {
+state.history.push({
+id: 'h' + Date.now() + Math.random().toString(36).slice(2, 7),
+ts: Date.now(), tipo: 'entrada', freezer, item, tamanho: p.tam, qtd: p.qtd, quem, obs, producedOn: dataProducao
+});
+});
+await saveData();
+renderStock();
+renderHistory();
+closeModal('modal-entrada');
+showToast(packs.length > 1 ? 'Entrada registrada (' + packs.length + ' embalagens).' : 'Entrada registrada.');
+}
+/* ---------- Modal: Saída ---------- */
+async function openSaidaModal(freezer, item, tamanho) {
+await refreshFromStorage(false);
+const freezerSel = document.getElementById('saida-freezer');
+freezerSel.innerHTML = buildFreezerOptgroups();
+if (freezer) freezerSel.value = freezer;
+onSaidaFreezerChange(item);
+if (tamanho) {
+const tamSel = document.getElementById('saida-tamanho');
+if ([...tamSel.options].some(o => o.value === tamanho)) { tamSel.value = tamanho; onSaidaTamanhoChange(); }
+}
+document.getElementById('saida-qtd').value = 1;
+document.getElementById('saida-quem').value = '';
+document.getElementById('saida-obs').value = '';
+document.getElementById('saida-erro').style.display = 'none';
+document.getElementById('modal-saida').classList.add('open');
+}
+function onSaidaFreezerChange(presetItem) {
+const freezer = document.getElementById('saida-freezer').value;
+const itemSel = document.getElementById('saida-item');
+itemSel.innerHTML = buildItemOptgroups(state.stock[freezer]);
+if (presetItem) itemSel.value = presetItem;
+onSaidaItemChange();
+}
+function onSaidaItemChange() {
+buildSaidaTamanhoOptions();
+onSaidaTamanhoChange();
+}
+// Preenche o <select> de tamanho só com embalagens que a regra central permite para esse
+// freezer+categoria, OU que já tenham estoque real ali — nunca esconde uma embalagem que já
+// existe fisicamente (mesmo que "errada"), pra sempre ser possível corrigi-la via Saída/Transferência.
+function buildSaidaTamanhoOptions() {
+const freezer = document.getElementById('saida-freezer').value;
+const item = document.getElementById('saida-item').value;
+const tamSel = document.getElementById('saida-tamanho');
+const previous = tamSel.value;
+const categoria = getItemCategory(item);
+const allowed = embalagensPermitidas(freezer, categoria);
+const loc = state.stock[freezer];
+const existing = (loc && loc[item]) ? loc[item] : {};
+const options = ALL_PACKAGES.filter(tam => allowed.includes(tam) || (existing[tam] || 0) > 0);
+if (options.length === 0) {
+tamSel.innerHTML = '';
+document.getElementById('saida-estoque-atual').textContent = 'Nenhuma embalagem disponível para esse sabor nesse freezer.';
+return;
+}
+tamSel.innerHTML = options.map(tam => `<option value="${tam}">${SIZE_LABEL[tam]}</option>`).join('');
+tamSel.value = options.includes(previous) ? previous : options[0];
+}
+function onSaidaTamanhoChange() {
+const freezer = document.getElementById('saida-freezer').value;
+const item = document.getElementById('saida-item').value;
+const tam = document.getElementById('saida-tamanho').value;
+if (!tam) { renderQtyButtons(0, 'saida-qtd-buttons', 'saida-qtd', 'saida'); return; }
+const loc = state.stock[freezer];
+const atual = (loc && loc[item] && loc[item][tam]) ? loc[item][tam] : 0;
+document.getElementById('saida-estoque-atual').textContent = `Estoque atual: ${atual} ${SIZE_LABEL[tam]}`;
+renderQtyButtons(atual, 'saida-qtd-buttons', 'saida-qtd', 'saida');
+}
+async function confirmSaida() {
+const freezer = document.getElementById('saida-freezer').value;
+const item = document.getElementById('saida-item').value;
+const tam = document.getElementById('saida-tamanho').value;
+const qtd = parseInt(document.getElementById('saida-qtd').value, 10);
+const motivo = document.getElementById('saida-motivo').value;
+const quem = document.getElementById('saida-quem').value.trim();
+const obs = document.getElementById('saida-obs').value.trim();
+const errEl = document.getElementById('saida-erro');
+if (!tam) { errEl.textContent = 'Nenhuma embalagem disponível para esse sabor nesse freezer.'; errEl.style.display = 'block'; return; }
+const loc = state.stock[freezer];
+const atual = (loc && loc[item] && loc[item][tam]) ? loc[item][tam] : 0;
+if (!qtd || qtd < 1) { errEl.textContent = 'Informe uma quantidade válida.'; errEl.style.display = 'block'; return; }
+if (qtd > atual) { errEl.textContent = `Estoque insuficiente: só há ${atual} ${SIZE_LABEL[tam]}.`; errEl.style.display = 'block'; return; }
+if (!quem) { errEl.textContent = 'Informe quem está registrando.'; errEl.style.display = 'block'; return; }
+errEl.style.display = 'none';
+if (!state.stock[freezer]) state.stock[freezer] = {};
+if (!state.stock[freezer][item]) state.stock[freezer][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+state.stock[freezer][item][tam] -= qtd;
+const loteConsumidoSaida = loteRemover(freezer, item, tam, qtd);
+state.history.push({
+id: 'h' + Date.now() + Math.random().toString(36).slice(2, 7),
+ts: Date.now(), tipo: 'saida', freezer, item, tamanho: tam, qtd, motivo, quem, obs,
+lotesConsumidos: loteConsumidoSaida
+});
+await saveData();
+renderStock();
+renderHistory();
+closeModal('modal-saida');
+showToast('Saída registrada.');
+}
+/* ---------- Modal: Transferência ---------- */
+async function openTransferModal(freezer, item, tamanho) {
+await refreshFromStorage(false);
+const origemSel = document.getElementById('transfer-origem');
+origemSel.innerHTML = buildFreezerOptgroups();
+if (freezer) origemSel.value = freezer;
+onTransferOrigemChange(item);
+if (tamanho) showQtyInput(null, `transfer-pack-qtd-${tamanho}`);
+document.getElementById('transfer-quem').value = '';
+document.getElementById('transfer-obs').value = '';
+document.getElementById('transfer-erro').style.display = 'none';
+document.getElementById('modal-transfer').classList.add('open');
+}
+function onTransferOrigemChange(presetItem) {
+const origem = document.getElementById('transfer-origem').value;
+const destinoSel = document.getElementById('transfer-destino');
+destinoSel.innerHTML = buildDestinoOptions(origem);
+refreshTransferItemList(presetItem);
+onTransferItemChange();
+}
+function onTransferDestinoChange() {
+refreshTransferItemList();
+onTransferItemChange();
+}
+// Sabor só aparece na lista se tiver, na origem, pelo menos uma embalagem que a regra central
+// permite no freezer de destino escolhido — mesma checagem usada em todo o resto do app
+// (Entrada, Saída, Self Service), nunca uma lógica própria e separada.
+function itemHasTransferableStock(origem, destino, item) {
+const loc = state.stock[origem];
+if (!loc || !loc[item]) return false;
+const categoria = getItemCategory(item);
+const allowed = embalagensPermitidas(destino, categoria);
+return allowed.some(tam => (loc[item][tam] || 0) > 0);
+}
+function refreshTransferItemList(presetItem) {
+const origem = document.getElementById('transfer-origem').value;
+const destino = document.getElementById('transfer-destino').value;
+const itemSel = document.getElementById('transfer-item');
+const hintEl = document.getElementById('transfer-item-hint');
+const itemsObj = state.stock[origem] || {};
+const filtered = Object.keys(itemsObj)
+.filter(i => itemHasTransferableStock(origem, destino, i))
+.reduce((acc, i) => { acc[i] = itemsObj[i]; return acc; }, {});
+const previousValue = itemSel.value;
+itemSel.innerHTML = buildItemOptgroups(filtered);
+if (presetItem && filtered[presetItem]) itemSel.value = presetItem;
+else if (filtered[previousValue]) itemSel.value = previousValue;
+if (Object.keys(filtered).length === 0) {
+if (hintEl) {
+hintEl.textContent = `Nenhum sabor em ${origem} tem uma embalagem que ${destino || 'o destino escolhido'} aceite — confira as regras de embalagem por freezer.`;
+hintEl.style.display = 'block';
+}
+} else if (hintEl) {
+hintEl.style.display = 'none';
+}
+}
+function onTransferItemChange() { renderTransferPackages(); }
+const TRANSFER_PACKAGES = [
+{ tam: 'cx5L', label: 'Cx5L' },
+{ tam: 'pt2L', label: '2L' },
+{ tam: 'pt1L', label: '1L' },
+{ tam: 'pt750ml', label: '750ml' }
+];
+// Mostra só as embalagens que (a) existem de fato na origem e (b) a regra central permite no
+// destino escolhido — em vez de sempre mostrar as 4 (algumas zeradas ou fisicamente impossíveis
+// pra aquele freezer, o que confundia). Preserva quantidades já digitadas quando o box continua
+// válido depois de trocar origem/destino/sabor — só reseta o que de fato deixou de fazer sentido.
+function renderTransferPackages() {
+const origem = document.getElementById('transfer-origem').value;
+const destino = document.getElementById('transfer-destino').value;
+const item = document.getElementById('transfer-item').value;
+const loc = state.stock[origem];
+const grid = document.getElementById('transfer-pack-grid');
+const hintEl = document.getElementById('transfer-pack-empty-hint');
+if (!grid) return;
+const categoria = getItemCategory(item);
+const allowedDestino = embalagensPermitidas(destino, categoria);
+const previousValues = {};
+TRANSFER_PACKAGES.forEach(p => {
+const existingInput = document.getElementById(`transfer-pack-qtd-${p.tam}`);
+if (existingInput) previousValues[p.tam] = existingInput.value;
+});
+const visible = TRANSFER_PACKAGES.filter(p => {
+const atual = (loc && loc[item] && loc[item][p.tam]) ? loc[item][p.tam] : 0;
+return atual > 0 && allowedDestino.includes(p.tam);
+});
+if (visible.length === 0) {
+grid.innerHTML = '';
+if (hintEl) {
+hintEl.textContent = item
+? `Nenhuma embalagem de "${item}" disponível em ${origem} pode ir para ${destino || 'o destino escolhido'} — confira as regras de embalagem por freezer.`
+: 'Escolha um sabor para ver as embalagens disponíveis.';
+hintEl.style.display = 'block';
+}
+return;
+}
+if (hintEl) hintEl.style.display = 'none';
+grid.innerHTML = visible.map(p => `
+<div class="transfer-pack-box">
+<div class="transfer-pack-label">${p.label}</div>
+<div class="hint transfer-pack-hint" id="transfer-pack-hint-${p.tam}"></div>
+<div class="qtd-buttons" id="transfer-pack-qtdbtns-${p.tam}"></div>
+<input type="number" id="transfer-pack-qtd-${p.tam}" min="0" value="0" style="display:none;">
+</div>
+`).join('');
+visible.forEach(p => {
+const atual = (loc && loc[item] && loc[item][p.tam]) ? loc[item][p.tam] : 0;
+document.getElementById(`transfer-pack-hint-${p.tam}`).textContent = `Disponível: ${atual}`;
+const inputEl = document.getElementById(`transfer-pack-qtd-${p.tam}`);
+if (previousValues[p.tam] !== undefined) inputEl.value = previousValues[p.tam];
+renderQtyButtons(atual, `transfer-pack-qtdbtns-${p.tam}`, `transfer-pack-qtd-${p.tam}`, 'transfer-pack', p.tam);
+});
+}
+/* Botões de seleção rápida de quantidade — reaproveitados pelos modais de Transferência e Saída */
+function renderQtyButtons(atual, boxId, inputId, context, extra, alwaysAllowManual) {
+const box = document.getElementById(boxId);
+const qtdInput = document.getElementById(inputId);
+if (!box || !qtdInput) return;
+const minVal = parseInt(qtdInput.min, 10) || 0;
+if (atual < 1) {
+if (alwaysAllowManual) {
+box.innerHTML = `<span class="qtd-buttons-empty">Sem estoque registrado.</span> <button type="button" class="qtd-btn qtd-btn-outra" onclick="showQtyInput(this, '${inputId}')">Outra quantidade</button>`;
+const preset = parseInt(qtdInput.value, 10);
+const val = isNaN(preset) ? minVal : Math.max(preset, minVal);
+qtdInput.value = val;
+if (val > 0) {
+qtdInput.style.display = '';
+qtdInput.classList.add('qtd-input-manual-active');
+markQtyButtonSelected(box.querySelector('.qtd-btn-outra'));
+} else {
+qtdInput.style.display = 'none';
+}
+return;
+}
+box.innerHTML = '<span class="qtd-buttons-empty">Sem estoque disponível.</span>';
+qtdInput.style.display = 'none';
+qtdInput.value = minVal;
+return;
+}
+const topCount = Math.min(atual, 10);
+let html = '';
+for (let n = atual; n > atual - topCount; n--) {
+html += `<button type="button" class="qtd-btn" onclick="qtyButtonClick(this, '${context}', ${n}, '${extra || ''}')">${n}</button>`;
+}
+html += `<button type="button" class="qtd-btn qtd-btn-outra" onclick="showQtyInput(this, '${inputId}')">Outra quantidade</button>`;
+box.innerHTML = html;
+const preset = parseInt(qtdInput.value, 10);
+const val = isNaN(preset) ? minVal : Math.min(Math.max(preset, minVal), atual);
+qtdInput.value = val;
+if (val > 0) {
+const matchBtn = [...box.querySelectorAll('.qtd-btn')].find(b => !b.classList.contains('qtd-btn-outra') && parseInt(b.textContent, 10) === val);
+if (matchBtn) {
+qtdInput.style.display = 'none';
+markQtyButtonSelected(matchBtn);
+} else {
+// Valor preservado não está entre os botões rápidos exibidos (ex: veio de "Outra quantidade") —
+// mantém o campo manual visível e ativo em vez de escondê-lo silenciosamente.
+qtdInput.style.display = '';
+qtdInput.classList.add('qtd-input-manual-active');
+markQtyButtonSelected(box.querySelector('.qtd-btn-outra'));
+}
+} else {
+qtdInput.style.display = 'none';
+}
+}
+// Marca visualmente qual botão de quantidade está selecionado dentro do seu grupo
+// (remove o destaque dos irmãos, para nunca sobrar mais de um "selecionado" ao mesmo tempo).
+function markQtyButtonSelected(btn) {
+if (!btn) return;
+const box = btn.closest('.qtd-buttons');
+if (!box) return;
+box.querySelectorAll('.qtd-btn').forEach(b => b.classList.remove('qtd-btn-selected'));
+btn.classList.add('qtd-btn-selected');
+}
+function showQtyInput(btn, inputId) {
+const qtdInput = document.getElementById(inputId);
+if (!qtdInput) return;
+markQtyButtonSelected(btn);
+qtdInput.style.display = '';
+qtdInput.classList.add('qtd-input-manual-active');
+qtdInput.focus();
+qtdInput.select();
+}
+function qtyButtonClick(btn, context, n, extra) {
+markQtyButtonSelected(btn);
+if (context === 'saida') {
+document.getElementById('saida-qtd').value = n;
+confirmSaida();
+} else if (context === 'transfer-pack') {
+document.getElementById(`transfer-pack-qtd-${extra}`).value = n;
+} else if (context === 'reposicao-qtd') {
+document.getElementById(`reposicao-qtd-input-${extra}`).value = n;
+}
+}
+async function confirmTransfer() {
+const origem = document.getElementById('transfer-origem').value;
+const item = document.getElementById('transfer-item').value;
+const destino = document.getElementById('transfer-destino').value;
+const quem = document.getElementById('transfer-quem').value.trim();
+const obs = document.getElementById('transfer-obs').value.trim();
+const errEl = document.getElementById('transfer-erro');
+const origemLoc = state.stock[origem];
+const packs = TRANSFER_PACKAGES.map(p => {
+const inputEl = document.getElementById(`transfer-pack-qtd-${p.tam}`);
+return {
+tam: p.tam,
+qtd: inputEl ? (parseInt(inputEl.value, 10) || 0) : 0,
+atual: (origemLoc && origemLoc[item] && origemLoc[item][p.tam]) ? origemLoc[item][p.tam] : 0
+};
+}).filter(p => p.qtd > 0);
+if (packs.length === 0) { errEl.textContent = 'Informe a quantidade de pelo menos uma embalagem.'; errEl.style.display = 'block'; return; }
+for (const p of packs) {
+if (p.qtd > p.atual) { errEl.textContent = `Estoque insuficiente de ${SIZE_LABEL[p.tam]}: só há ${p.atual} em ${origem}.`; errEl.style.display = 'block'; return; }
+}
+if (!destino) { errEl.textContent = 'Selecione o freezer de destino.'; errEl.style.display = 'block'; return; }
+if (!quem) { errEl.textContent = 'Informe quem está registrando.'; errEl.style.display = 'block'; return; }
+// Rede de segurança: mesmo que a interface já filtre as embalagens visíveis pelo destino,
+// nunca deixa passar uma combinação que a regra central não permite lá.
+const categoria = getItemCategory(item);
+const invalidPack = packs.find(p => !embalagemPermitida(destino, categoria, p.tam));
+if (invalidPack) {
+errEl.textContent = `${SIZE_LABEL[invalidPack.tam]} não é uma embalagem aceita em ${destino} para essa categoria.`;
+errEl.style.display = 'block';
+return;
+}
+errEl.style.display = 'none';
+if (!state.stock[origem]) state.stock[origem] = {};
+if (!state.stock[origem][item]) state.stock[origem][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+if (!state.stock[destino][item]) state.stock[destino][item] = { cx5L: 0, pt2L: 0, pt1L: 0, pt750ml: 0 };
+packs.forEach(p => {
+state.stock[origem][item][p.tam] -= p.qtd;
+state.stock[destino][item][p.tam] += p.qtd;
+const loteConsumidoBruto = loteRemover(origem, item, p.tam, p.qtd);
+const loteConsumido = loteConsumidoBruto.length > 0 ? loteConsumidoBruto : [{ producedOn: null, quantidade: p.qtd }];
+loteConsumido.forEach(c => loteAdicionar(destino, item, p.tam, c.quantidade, c.producedOn));
+state.history.push({
+id: 'h' + Date.now() + Math.random().toString(36).slice(2, 7),
+ts: Date.now(), tipo: 'transferencia', freezer: origem, destino, item, tamanho: p.tam, qtd: p.qtd, quem, obs,
+lotesConsumidos: loteConsumido
+});
+});
+await saveData();
+renderStock();
+renderHistory();
+closeModal('modal-transfer');
+showToast(packs.length > 1 ? 'Transferência registrada (' + packs.length + ' embalagens).' : 'Transferência registrada.');
+}
+function closeModal(id) {
+document.getElementById(id).classList.remove('open');
+}
+/* ---------- Confirmação/alerta próprios (confirm()/alert() nativos são bloqueados no preview) ---------- */
+function showConfirm(message, okLabel, okOnly) {
+return new Promise((resolve) => {
+document.getElementById('confirm-message').textContent = message;
+const okBtn = document.getElementById('confirm-ok-btn');
+const cancelBtn = document.getElementById('confirm-cancel-btn');
+okBtn.textContent = okLabel || 'Confirmar';
+cancelBtn.style.display = okOnly ? 'none' : '';
+const cleanup = () => {
+okBtn.onclick = null;
+cancelBtn.onclick = null;
+closeModal('modal-confirm');
+};
+okBtn.onclick = () => { cleanup(); resolve(true); };
+cancelBtn.onclick = () => { cleanup(); resolve(false); };
+document.getElementById('modal-confirm').classList.add('open');
+});
+}
+async function showAlert(message) {
+return showConfirm(message, 'OK', true);
+}
+async function openAuditEmbalagensModal() {
+await refreshFromStorage(false);
+const violations = auditFreezerPackageViolations();
+const listEl = document.getElementById('audit-embalagens-list');
+const titleEl = document.getElementById('audit-embalagens-title');
+if (violations.length === 0) {
+titleEl.textContent = '✅ Nenhuma inconsistência encontrada';
+listEl.innerHTML = '<p style="font-size:13.5px; color:var(--muted); margin:0;">Todo o estoque atual respeita a regra de embalagem por freezer.</p>';
+} else {
+titleEl.textContent = `⚠️ ${violations.length} inconsistência${violations.length === 1 ? '' : 's'} encontrada${violations.length === 1 ? '' : 's'}`;
+listEl.innerHTML = violations.map(v => `
+<div style="border:1px solid var(--border); border-radius:8px; padding:9px 11px; font-size:13px;">
+<div style="font-weight:700;">${escapeHTML(v.item)} <span style="font-weight:400; color:var(--muted);">(${CATEGORY_META[v.categoria] ? CATEGORY_META[v.categoria].label : v.categoria})</span></div>
+<div style="margin-top:2px;">Freezer: <strong>${escapeHTML(v.freezer)}</strong> — embalagem: <strong>${SIZE_LABEL[v.tam]}</strong> — quantidade: <strong>${v.qty}</strong></div>
+<div style="color:var(--saida); font-size:11.5px; margin-top:3px;">Essa embalagem não é aceita nesse freezer para essa categoria, segundo a regra oficial.</div>
+</div>
+`).join('');
+}
+document.getElementById('modal-audit-embalagens').classList.add('open');
+}
+// Roda uma vez, silenciosamente, logo após carregar os dados — se encontrar alguma
+// inconsistência, avisa com um toast (sem travar a tela); o usuário abre o botão
+// "🔍 Verificar regras de embalagem" pra ver o detalhamento completo.
+function checkEmbalagemAuditOnLoad() {
+try {
+const violations = auditFreezerPackageViolations();
+if (violations.length > 0) {
+showToast(`⚠️ ${violations.length} inconsistência${violations.length === 1 ? '' : 's'} de embalagem no estoque — toque em "Verificar regras de embalagem" para ver.`);
+}
+} catch (e) {
+console.error('Erro ao verificar regras de embalagem:', e);
+}
+}
+async function onRestoreFileSelected(event) {
+const file = event.target.files[0];
+if (!file) return;
+let text;
+try {
+text = await file.text();
+} catch (e) {
+// Fallback para navegadores/contextos onde file.text() falha silenciosamente
+text = await new Promise((resolve, reject) => {
+const reader = new FileReader();
+reader.onload = (ev) => resolve(ev.target.result);
+reader.onerror = reject;
+reader.readAsText(file);
+});
+}
+let parsed;
+try {
+parsed = JSON.parse(text);
+} catch (err) {
+await showAlert('Esse arquivo não é um backup válido (JSON inválido).');
+event.target.value = '';
+return;
+}
+if (!parsed || typeof parsed.stock !== 'object') {
+await showAlert('Esse arquivo não parece ser um backup do controle de estoque.');
+event.target.value = '';
+return;
+}
+const confirmMsg = 'Isso vai SUBSTITUIR todo o estoque e histórico atuais pelos dados desse backup. Essa ação não pode ser desfeita. Continuar?';
+const ok = await showConfirm(confirmMsg, 'Restaurar backup');
+if (!ok) {
+event.target.value = '';
+return;
+}
+state = parsed;
+if (!state.history) state.history = [];
+await migrateState();
+await saveData();
+renderAll();
+event.target.value = '';
+showToast('Backup restaurado.');
+}
+function exportBackup() {
+const dataStr = JSON.stringify(state, null, 2);
+const blob = new Blob([dataStr], { type: 'application/json' });
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+const now = new Date();
+const stamp = now.toISOString().slice(0, 16).replace(/[:T]/g, '-');
+a.href = url;
+a.download = `backup-estoque-freezers-${stamp}.json`;
+document.body.appendChild(a);
+a.click();
+document.body.removeChild(a);
+URL.revokeObjectURL(url);
+showToast('Backup exportado.');
+}
+/* ---------- Impressão ---------- */
+function printStock() {
+const est = document.getElementById('view-estoque');
+const hist = document.getElementById('view-historico');
+const prevEst = est.style.display, prevHist = hist.style.display;
+est.style.display = '';
+hist.style.display = 'none';
+document.body.classList.add('print-mode');
+window.print();
+const restore = () => {
+est.style.display = prevEst;
+hist.style.display = prevHist;
+document.body.classList.remove('print-mode');
+window.removeEventListener('afterprint', restore);
+};
+window.addEventListener('afterprint', restore);
+}
+function printHistory() {
+const est = document.getElementById('view-estoque');
+const hist = document.getElementById('view-historico');
+const prevEst = est.style.display, prevHist = hist.style.display;
+est.style.display = 'none';
+hist.style.display = '';
+document.body.classList.add('print-mode');
+window.print();
+const restore = () => {
+est.style.display = prevEst;
+hist.style.display = prevHist;
+document.body.classList.remove('print-mode');
+window.removeEventListener('afterprint', restore);
+};
+window.addEventListener('afterprint', restore);
+}
+/* ---------- Sincronização entre dispositivos ---------- */
+async function refreshFromStorage(showFeedback) {
+const btn = document.getElementById('refresh-btn');
+if (btn) btn.classList.add('spinning');
+try {
+const raw = await storageLayer.get(STORAGE_KEY);
+if (raw) {
+state = JSON.parse(raw);
+await migrateState();
+const onHistorico = document.getElementById('tab-historico').classList.contains('active');
+const onReposicaoRefresh = document.getElementById('tab-reposicao').classList.contains('active');
+const onRelatoriosRefresh = document.getElementById('tab-relatorios').classList.contains('active');
+populateFilterFreezer();
+if (onHistorico) renderHistory(); else if (onReposicaoRefresh) renderReposicao(); else if (onRelatoriosRefresh) renderRelatorios(); else renderStock();
+updateLastUpdatedDisplay();
+if (showFeedback) showToast('Dados atualizados.');
+}
+} catch (e) {
+if (showFeedback) showToast('Não foi possível atualizar agora.');
+console.error(e);
+}
+if (btn) setTimeout(() => btn.classList.remove('spinning'), 600);
+}
+// Refresh periodically while the tab/app is open
+setInterval(() => refreshFromStorage(false), 25000);
+// Refresh whenever the tab/app comes back to the foreground
+document.addEventListener('visibilitychange', () => {
+if (!document.hidden) refreshFromStorage(false);
+});
+// Mantém o badge de sincronização atualizado (ok -> desatualizado) mesmo sem novos dados
+setInterval(updateLastUpdatedDisplay, 30000);
+loadData();
+</script>
+</body>
+</html>
